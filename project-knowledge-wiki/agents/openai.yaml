@@ -1,0 +1,7 @@
+interface:
+  display_name: "项目知识库"
+  short_description: "查询并维护仓库内项目知识库"
+  default_prompt: "使用 $project-knowledge-wiki 回答这个项目问题，或更新 `knowledge/` 里的知识库内容。"
+
+policy:
+  allow_implicit_invocation: true
