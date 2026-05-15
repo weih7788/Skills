@@ -31,6 +31,20 @@ description: 当需要查询当前项目知识库、补充或更新当前项目�
    - `knowledge/wiki/{domains,concepts,flows,integrations,data-models,runbooks,decisions}/`
 4. 运行附带脚本时，默认在当前项目根目录执行；如果从别的目录调用脚本，传入 `--repo-root /path/to/project`。
 
+## 路径与链接规则
+
+1. 知识库中用于定位项目文件的路径必须使用“项目根目录相对路径”，例如 `doc/README.md`、`src/app.ts`。
+2. `source_refs` 与 `related_pages` 必须使用项目根目录相对路径，不要写成绝对路径、`./...` 或 `../...`。
+3. 正文中指向项目源文件的 Markdown 链接要同时满足两个目标：
+   - 链接文本使用项目根目录相对路径，便于模型和工具识别来源。
+   - 链接目标使用相对当前 Markdown 文件位置的路径，确保 VS Code / Markdown 预览可以跳转。
+4. 推荐写法：
+   - `source_refs: ["doc/code-generation-rules.md"]`
+   - 在 `knowledge/raw/README.md` 中写 `[doc/code-generation-rules.md](../../doc/code-generation-rules.md)`
+   - 在 `knowledge/wiki/concepts/foo.md` 中写 `[src/app.ts](../../../src/app.ts)`
+5. 生成索引时，展示文本应保留项目根目录相对路径；括号里的链接目标应从索引文件所在目录正确跳到源文件。
+6. 链接到同一个知识库目录内的 wiki 页面索引时，可以使用相对当前 Markdown 文件的链接，例如 `knowledge/wiki/README.md` 中的 `./concepts/foo.md`。
+
 ## 何时使用
 
 当用户有以下需求时，应触发这个 skill：
@@ -47,8 +61,9 @@ description: 当需要查询当前项目知识库、补充或更新当前项目�
 2. 查询知识时优先按 `canonical -> reviewed -> draft` 的顺序使用 `knowledge/wiki`。
 3. 如果 wiki 不足以支撑结论，再回退到 raw 文档和源码。
 4. `source_refs` 与 `related_pages` 必须使用“相对仓库根目录”的路径。
-5. 不确定的内容必须显式标记为 `Inference:` 或 `Open Question:`。
-6. 不要把猜测写成 canonical 事实。
+5. 知识库中指向项目源文件的 Markdown 链接文本必须使用“相对仓库根目录”的路径，链接目标必须能从当前 Markdown 文件位置正确跳转。
+6. 不确定的内容必须显式标记为 `Inference:` 或 `Open Question:`。
+7. 不要把猜测写成 canonical 事实。
 
 ## 查询工作流
 

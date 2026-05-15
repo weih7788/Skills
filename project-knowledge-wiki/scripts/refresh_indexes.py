@@ -6,6 +6,7 @@ Refresh auto-generated blocks in knowledge index files.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -101,6 +102,7 @@ def build_wiki_block(repo_root: Path) -> str:
 
 
 def build_raw_block(repo_root: Path) -> str:
+    raw_index = repo_root / "knowledge" / "raw" / "README.md"
     candidates = []
     for root in ("docs", "doc"):
         base = repo_root / root
@@ -111,7 +113,10 @@ def build_raw_block(repo_root: Path) -> str:
                 rel = path.relative_to(repo_root).as_posix()
                 candidates.append(rel)
 
-    lines = [f"- [{rel}](../../{rel})" for rel in candidates]
+    lines = []
+    for rel in candidates:
+        target = os.path.relpath(repo_root / rel, raw_index.parent).replace(os.sep, "/")
+        lines.append(f"- [{rel}]({target})")
     return "\n".join(lines)
 
 

@@ -19,9 +19,10 @@
 2. Locate the source artifact.
 3. 决定是更新已有页面，还是新建页面。
 4. 保持 `source_refs` 为“相对仓库根目录”路径。
-5. 如果结论仍不完全确定，添加 `Open Question:`。
-6. 执行 lint。
-7. 页面目录变化后刷新索引。
+5. 正文中指向项目源文件的 Markdown 链接，链接文本使用“相对仓库根目录”路径，链接目标使用从当前 Markdown 文件可跳转到源文件的相对路径，例如 `knowledge/raw/README.md` 中写 `[doc/foo.md](../../doc/foo.md)`。
+6. 如果结论仍不完全确定，添加 `Open Question:`。
+7. 执行 lint。
+8. 页面目录变化后刷新索引。
 
 ## 页面状态提升
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import re
 import sys
 from pathlib import Path
 
@@ -153,6 +154,35 @@ def is_repo_relative(raw_path: str) -> bool:
     return True
 
 
+def is_external_link(target: str) -> bool:
+    return (
+        "://" in target
+        or target.startswith("#")
+        or target.startswith("mailto:")
+        or target.startswith("tel:")
+    )
+
+
+def normalize_markdown_link_target(target: str) -> str:
+    target = target.strip().strip("<>")
+    if "#" in target:
+        target = target.split("#", 1)[0]
+    return target
+
+
+def markdown_links(text: str) -> list[tuple[str, str]]:
+    pattern = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)(?:\s+['\"][^)]*['\"])?\)")
+    return [(match.group(1), match.group(2)) for match in pattern.finditer(text)]
+
+
+def resolve_markdown_link(page_path: Path, target: str) -> Path:
+    return (page_path.parent / target).resolve()
+
+
+def is_path_like_label(label: str) -> bool:
+    return "/" in label or bool(Path(label).suffix)
+
+
 def validate_page(page_path: Path, repo_root: Path) -> list[str]:
     errors: list[str] = []
     text = page_path.read_text(encoding="utf-8")
@@ -194,6 +224,25 @@ def validate_page(page_path: Path, repo_root: Path) -> list[str]:
                 continue
             if not (repo_root / item).exists():
                 errors.append(f"{page_path}: {field_name} path does not exist '{item}'")
+
+    for label, target in markdown_links(text):
+        normalized = normalize_markdown_link_target(target)
+        if not normalized or is_external_link(normalized):
+            continue
+        if Path(normalized).is_absolute():
+            errors.append(f"{page_path}: markdown link target must not be absolute '{target}'")
+            continue
+        resolved = resolve_markdown_link(page_path, normalized)
+        if not resolved.exists():
+            errors.append(f"{page_path}: markdown link target path does not exist '{target}'")
+            continue
+        try:
+            repo_relative_target = resolved.relative_to(repo_root).as_posix()
+        except ValueError:
+            errors.append(f"{page_path}: markdown link target escapes repo root '{target}'")
+            continue
+        if is_path_like_label(label) and (not is_repo_relative(label) or label != repo_relative_target):
+            errors.append(f"{page_path}: markdown link label must be project-relative '{label}'")
 
     return errors
 
