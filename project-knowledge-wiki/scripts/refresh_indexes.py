@@ -10,10 +10,10 @@ import os
 import sys
 from pathlib import Path
 
+from knowledge_bootstrap import ensure_knowledge_structure
 
 START = "<!-- AUTO-GENERATED:START -->"
 END = "<!-- AUTO-GENERATED:END -->"
-WIKI_DIRS = ("domains", "concepts", "flows", "integrations", "data-models", "runbooks", "decisions")
 
 
 def default_repo_root() -> Path:
@@ -22,64 +22,6 @@ def default_repo_root() -> Path:
         if (path / ".git").exists():
             return path
     return cwd
-
-
-def write_if_missing(path: Path, content: str) -> None:
-    if not path.exists():
-        path.write_text(content, encoding="utf-8")
-
-
-def ensure_knowledge_structure(repo_root: Path) -> None:
-    knowledge_root = repo_root / "knowledge"
-    wiki_root = knowledge_root / "wiki"
-    raw_root = knowledge_root / "raw"
-
-    for directory in (knowledge_root, wiki_root, raw_root, *(wiki_root / dirname for dirname in WIKI_DIRS)):
-        directory.mkdir(parents=True, exist_ok=True)
-
-    write_if_missing(
-        knowledge_root / "README.md",
-        """# Project Knowledge
-
-This directory contains the project-local LLM wiki.
-
-- `wiki/`: curated project knowledge pages
-- `raw/`: index of source artifacts used by the wiki
-""",
-    )
-    write_if_missing(
-        knowledge_root / "SCHEMA.md",
-        """# Knowledge Schema
-
-Wiki pages use YAML front matter with these required keys:
-
-- `title`
-- `type`
-- `status`
-- `owner`
-- `last_verified_at`
-- `source_refs`
-- `related_pages`
-
-`source_refs` and `related_pages` must use paths relative to the project root.
-""",
-    )
-    write_if_missing(
-        wiki_root / "README.md",
-        """# Wiki Index
-
-<!-- AUTO-GENERATED:START -->
-<!-- AUTO-GENERATED:END -->
-""",
-    )
-    write_if_missing(
-        raw_root / "README.md",
-        """# Raw Source Index
-
-<!-- AUTO-GENERATED:START -->
-<!-- AUTO-GENERATED:END -->
-""",
-    )
 
 
 def replace_block(path: Path, content: str) -> None:
@@ -97,7 +39,7 @@ def build_wiki_block(repo_root: Path) -> str:
     lines = []
     for file_path in files:
         rel = file_path.relative_to(wiki_root).as_posix()
-        lines.append(f"- [{rel}](./{rel})")
+        lines.append(f"- [{file_path.name}](./{rel})")
     return "\n".join(lines)
 
 
@@ -116,7 +58,7 @@ def build_raw_block(repo_root: Path) -> str:
     lines = []
     for rel in candidates:
         target = os.path.relpath(repo_root / rel, raw_index.parent).replace(os.sep, "/")
-        lines.append(f"- [{rel}]({target})")
+        lines.append(f"- [{Path(rel).name}]({target})")
     return "\n".join(lines)
 
 

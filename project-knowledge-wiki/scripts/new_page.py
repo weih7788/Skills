@@ -11,6 +11,8 @@ import re
 import sys
 from pathlib import Path
 
+from knowledge_bootstrap import ensure_knowledge_structure
+
 
 TYPE_TO_DIR = {
     "domain": "domains",
@@ -41,79 +43,40 @@ def default_repo_root() -> Path:
     return cwd
 
 
-def ensure_knowledge_structure(repo_root: Path) -> None:
-    knowledge_root = repo_root / "knowledge"
-    wiki_root = knowledge_root / "wiki"
-    raw_root = knowledge_root / "raw"
-
-    for directory in (
-        knowledge_root,
-        wiki_root,
-        raw_root,
-        *(wiki_root / dirname for dirname in TYPE_TO_DIR.values()),
-    ):
-        directory.mkdir(parents=True, exist_ok=True)
-
-    write_if_missing(
-        knowledge_root / "README.md",
-        """# Project Knowledge
-
-This directory contains the project-local LLM wiki.
-
-- `wiki/`: curated project knowledge pages
-- `raw/`: index of source artifacts used by the wiki
-""",
-    )
-    write_if_missing(
-        knowledge_root / "SCHEMA.md",
-        """# Knowledge Schema
-
-Wiki pages use YAML front matter with these required keys:
-
-- `title`
-- `type`
-- `status`
-- `owner`
-- `last_verified_at`
-- `source_refs`
-- `related_pages`
-
-`source_refs` and `related_pages` must use paths relative to the project root.
-""",
-    )
-    write_if_missing(
-        wiki_root / "README.md",
-        """# Wiki Index
-
-<!-- AUTO-GENERATED:START -->
-<!-- AUTO-GENERATED:END -->
-""",
-    )
-    write_if_missing(
-        raw_root / "README.md",
-        """# Raw Source Index
-
-<!-- AUTO-GENERATED:START -->
-<!-- AUTO-GENERATED:END -->
-""",
-    )
-
-
-def write_if_missing(path: Path, content: str) -> None:
-    if not path.exists():
-        path.write_text(content, encoding="utf-8")
-
-
 def slugify(value: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
     slug = re.sub(r"-{2,}", "-", slug)
     return slug
 
 
-def build_content(page_type: str, title: str, owner: str, status: str) -> str:
+def is_repo_relative(raw_path: str) -> bool:
+    if not raw_path:
+        return False
+    path = Path(raw_path)
+    if path.is_absolute():
+        return False
+    return not (raw_path.startswith("./") or raw_path.startswith("../") or raw_path.startswith("/"))
+
+
+def yaml_list(values: list[str]) -> str:
+    if not values:
+        return ""
+    return "\n".join(f"  - {value}" for value in values)
+
+
+def build_content(
+    page_type: str,
+    title: str,
+    owner: str,
+    status: str,
+    source_refs: list[str],
+    related_pages: list[str],
+) -> str:
     today = dt.date.today().isoformat()
     sections = TYPE_TO_SECTIONS[page_type]
     section_text = "\n\n".join(f"## {section}\n" for section in sections)
+    source_ref_text = yaml_list(source_refs)
+    related_page_text = yaml_list(related_pages)
     return f"""---
 title: {title}
 type: {page_type}
@@ -121,7 +84,9 @@ status: {status}
 owner: {owner}
 last_verified_at: {today}
 source_refs:
+{source_ref_text}
 related_pages:
+{related_page_text}
 ---
 
 {section_text}
@@ -135,11 +100,42 @@ def main() -> int:
     parser.add_argument("--slug")
     parser.add_argument("--owner", default="engineering")
     parser.add_argument("--status", choices=["draft", "reviewed", "canonical"], default="draft")
+    parser.add_argument(
+        "--source-ref",
+        action="append",
+        default=[],
+        help="Repo-root relative source path. Repeat for multiple sources.",
+    )
+    parser.add_argument(
+        "--related-page",
+        action="append",
+        default=[],
+        help="Repo-root relative related wiki page path. Repeat for multiple pages.",
+    )
+    parser.add_argument(
+        "--allow-empty-source-refs",
+        action="store_true",
+        help="Create a draft without source_refs. The page will not pass lint until sources are added.",
+    )
     parser.add_argument("--repo-root", type=Path, default=default_repo_root())
     args = parser.parse_args()
 
     repo_root = args.repo_root.resolve()
     ensure_knowledge_structure(repo_root)
+
+    if not args.source_ref and not args.allow_empty_source_refs:
+        print("[ERROR] at least one --source-ref is required; use --allow-empty-source-refs for scratch drafts")
+        return 1
+
+    for field_name, values in (("--source-ref", args.source_ref), ("--related-page", args.related_page)):
+        for value in values:
+            if not is_repo_relative(value):
+                print(f"[ERROR] {field_name} must be repo-root relative without ./ or ../: {value}")
+                return 1
+            if not (repo_root / value).exists():
+                print(f"[ERROR] {field_name} path does not exist: {value}")
+                return 1
+
     slug = args.slug or slugify(args.title)
     if not slug:
         print("[ERROR] failed to build slug")
@@ -153,7 +149,10 @@ def main() -> int:
         print(f"[ERROR] page already exists: {target_file}")
         return 1
 
-    target_file.write_text(build_content(args.page_type, args.title, args.owner, args.status), encoding="utf-8")
+    target_file.write_text(
+        build_content(args.page_type, args.title, args.owner, args.status, args.source_ref, args.related_page),
+        encoding="utf-8",
+    )
     print(f"[OK] created {target_file}")
     return 0
 

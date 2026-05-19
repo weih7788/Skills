@@ -1,10 +1,12 @@
 # 工作流
 
+路径、front matter 与引用格式以 [schema.md](./schema.md) 为准。
+
 ## 查询流程
 
 回答项目问题时，按这个顺序查找：
 
-0. 确定当前项目根目录，并确保该根目录下存在 `knowledge/`；如果不存在，先创建最小知识库结构。
+0. 确定当前项目根目录，并确保该根目录下存在 `knowledge/`；若不存在，运行 `scripts/lint_knowledge.py` 或 `scripts/new_page.py` 触发 bootstrap（会写入 `SCHEMA.md`）。
 1. `knowledge/wiki/README.md`
 2. 相关 `canonical` 页面
 3. 相关 `reviewed` 页面
@@ -18,11 +20,11 @@
 1. Confirm what changed.
 2. Locate the source artifact.
 3. 决定是更新已有页面，还是新建页面。
-4. 保持 `source_refs` 为“相对仓库根目录”路径。
-5. 正文中指向项目源文件的 Markdown 链接，链接文本使用“相对仓库根目录”路径，链接目标使用从当前 Markdown 文件可跳转到源文件的相对路径，例如 `knowledge/raw/README.md` 中写 `[doc/foo.md](../../doc/foo.md)`。
-6. 如果结论仍不完全确定，添加 `Open Question:`。
-7. 执行 lint。
-8. 页面目录变化后刷新索引。
+4. `source_refs` / `related_pages` 使用仓库根目录相对路径。
+5. 正文链接：label 仅文件名；target 相对当前 wiki 文件（见 schema 第 6 节示例）。
+6. 结论不确定时添加 `Open Question:`。
+7. 执行 `scripts/lint_knowledge.py`。
+8. 页面目录变化后执行 `scripts/refresh_indexes.py`。
 
 ## 页面状态提升
 

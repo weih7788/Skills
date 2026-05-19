@@ -14,7 +14,40 @@ description: 当需要查询当前项目知识库、补充或更新当前项目�
 - 在重新翻代码之前，优先查询已经沉淀的稳定项目知识
 - 把新的项目事实整理成带来源、可审阅、可持续维护的 wiki 页面
 
-不要把大量项目事实直接复制进 skill 本体。真正承载事实的内容应该保留在当前项目仓库里的 `knowledge/`、源码、设计文档、SQL 和脚本中。
+不要把大量**项目业务事实**直接复制进 skill 本体。业务事实应写在项目 `knowledge/wiki/`、源码、设计文档、SQL 和脚本中。
+
+**结构契约**由 skill 自带的 [references/schema.md](./references/schema.md) 定义；项目里的 `knowledge/SCHEMA.md` 应与该文件保持一致（新建项目时由脚本自动复制，已有项目需人工对齐）。
+
+## Schema 契约（必读）
+
+使用本 skill 进行查询、新建或更新 wiki 前，按以下顺序读取规范：
+
+1. 项目内 `knowledge/SCHEMA.md`（若存在，以项目为准；与 skill 冲突时先核对再合并）
+2. skill 内 [references/schema.md](./references/schema.md)（规范真源，含完整 front matter、页面类型、引用规则与模板）
+
+Schema 要点摘要（细节以 `references/schema.md` 为准）：
+
+| 层级 | 职责 |
+|------|------|
+| `raw/` | 只登记来源索引，不改写事实 |
+| `wiki/` | 稳定知识页，带 front matter 与 `source_refs` |
+| `SCHEMA.md` | 页面类型、元字段、引用格式、维护流程 |
+
+**Front matter 必填字段**：`title`、`type`、`status`、`owner`、`last_verified_at`、`source_refs`、`related_pages`
+
+**`type` 取值**：`domain` | `concept` | `flow` | `integration` | `data-model` | `runbook` | `decision`
+
+**`status` 可信度**：`draft` → `reviewed` → `canonical`（查询时优先 canonical）
+
+**路径规则**：
+
+- `source_refs`、`related_pages`：相对**仓库根目录**，禁止 `./`、`../`、绝对路径
+- 正文 Markdown 链接**目标**（圆括号）：相对**当前 wiki 文件**的可跳转路径
+- 正文 Markdown 链接 **label**（方括号）：仅**文件名**（含扩展名），不写目录
+
+**正文标注**：`Source:` / `Inference:` / `Open Question:`（不要把推断写成 canonical 事实）
+
+页面类型说明与章节模板见 [references/page-types.md](./references/page-types.md) 与 schema 第 9 节。
 
 ## 项目根目录与知识库位置
 
@@ -25,25 +58,11 @@ description: 当需要查询当前项目知识库、补充或更新当前项目�
 2. 知识库始终读取和写入该项目根目录下的 `knowledge/`，不要读取 skill 自身安装目录里的 `knowledge/`。
 3. 如果该项目根目录下还没有 `knowledge/`，先创建最小知识库结构，再继续查询或更新：
    - `knowledge/README.md`
-   - `knowledge/SCHEMA.md`
+   - `knowledge/SCHEMA.md`（由 `scripts/knowledge_bootstrap.py` 从 `references/schema.md` 写入）
    - `knowledge/wiki/README.md`
    - `knowledge/raw/README.md`
    - `knowledge/wiki/{domains,concepts,flows,integrations,data-models,runbooks,decisions}/`
 4. 运行附带脚本时，默认在当前项目根目录执行；如果从别的目录调用脚本，传入 `--repo-root /path/to/project`。
-
-## 路径与链接规则
-
-1. 知识库中用于定位项目文件的路径必须使用“项目根目录相对路径”，例如 `doc/README.md`、`src/app.ts`。
-2. `source_refs` 与 `related_pages` 必须使用项目根目录相对路径，不要写成绝对路径、`./...` 或 `../...`。
-3. 正文中指向项目源文件的 Markdown 链接要同时满足两个目标：
-   - 链接文本使用项目根目录相对路径，便于模型和工具识别来源。
-   - 链接目标使用相对当前 Markdown 文件位置的路径，确保 VS Code / Markdown 预览可以跳转。
-4. 推荐写法：
-   - `source_refs: ["doc/code-generation-rules.md"]`
-   - 在 `knowledge/raw/README.md` 中写 `[doc/code-generation-rules.md](../../doc/code-generation-rules.md)`
-   - 在 `knowledge/wiki/concepts/foo.md` 中写 `[src/app.ts](../../../src/app.ts)`
-5. 生成索引时，展示文本应保留项目根目录相对路径；括号里的链接目标应从索引文件所在目录正确跳到源文件。
-6. 链接到同一个知识库目录内的 wiki 页面索引时，可以使用相对当前 Markdown 文件的链接，例如 `knowledge/wiki/README.md` 中的 `./concepts/foo.md`。
 
 ## 何时使用
 
@@ -57,13 +76,11 @@ description: 当需要查询当前项目知识库、补充或更新当前项目�
 
 ## 核心规则
 
-1. 修改知识库结构前，先确保当前项目根目录下存在 `knowledge/`；如果不存在，创建最小结构，然后读 `knowledge/README.md` 和 `knowledge/SCHEMA.md`。
+1. 修改知识库前，先读项目 `knowledge/README.md` 与 `knowledge/SCHEMA.md`；若缺失，执行 lint 或 new_page 脚本完成 bootstrap。
 2. 查询知识时优先按 `canonical -> reviewed -> draft` 的顺序使用 `knowledge/wiki`。
 3. 如果 wiki 不足以支撑结论，再回退到 raw 文档和源码。
-4. `source_refs` 与 `related_pages` 必须使用“相对仓库根目录”的路径。
-5. 知识库中指向项目源文件的 Markdown 链接文本必须使用“相对仓库根目录”的路径，链接目标必须能从当前 Markdown 文件位置正确跳转。
-6. 不确定的内容必须显式标记为 `Inference:` 或 `Open Question:`。
-7. 不要把猜测写成 canonical 事实。
+4. 遵守 schema 第 6、7 节的路径与可信度标注规则。
+5. 不确定的内容必须显式标记为 `Inference:` 或 `Open Question:`。
 
 ## 查询工作流
 
@@ -79,23 +96,13 @@ description: 当需要查询当前项目知识库、补充或更新当前项目�
 1. 先确认新增事实来自哪里：设计文档、SQL、脚本、代码变更、事故记录或发布检查单。
 2. 如果是新的重要来源或新的来源类别，先更新 `knowledge/raw/README.md`。
 3. 如果已有页面覆盖该主题，就更新原页面；如果原页面会明显过载，就新建页面。
-4. 新建页面时，可优先使用 `scripts/new_page.py`。
-5. 更新后执行 `scripts/lint_knowledge.py`。
+4. 新建页面时，可优先使用 `scripts/new_page.py`（章节结构对齐 schema 模板）。
+5. 更新后执行 `scripts/lint_knowledge.py`（校验项与 schema 第 4、6、8.3 节一致）。
 6. 如果页面索引发生变化，再执行 `scripts/refresh_indexes.py`。
-
-## 页面类型选择
-
-- `domain`：业务域总览
-- `concept`：字段语义、规则、重要术语
-- `flow`：跨模块流程或时序链路
-- `runbook`：重复执行的维护与排障手册
-- `decision`：架构或产品级决策
-
-模板与选择建议见 [references/page-types.md](./references/page-types.md)。
 
 ## 质量要求
 
-- 每个 wiki 页面都应包含 front matter。
+- 每个 wiki 页面都应包含符合 schema 的 front matter。
 - `source_refs` 应指向仓库内真实存在的文件或目录。
 - 页面完成实质性复核后，应更新 `last_verified_at`。
 - 如果页面还不足以稳定复用，就保持 `draft`。
@@ -104,8 +111,11 @@ description: 当需要查询当前项目知识库、补充或更新当前项目�
 
 ## 附带脚本
 
-- `scripts/lint_knowledge.py`：校验 wiki 元信息、路径引用和基础规范。
-- `scripts/new_page.py`：按页面类型模板生成新的知识页。
-- `scripts/refresh_indexes.py`：刷新 `knowledge/raw/README.md` 与 `knowledge/wiki/README.md` 中的自动索引区。
+| 脚本 | 作用 |
+|------|------|
+| `scripts/knowledge_bootstrap.py` | 创建 `knowledge/` 目录树；将 `references/schema.md` 写入 `knowledge/SCHEMA.md`（仅当不存在） |
+| `scripts/lint_knowledge.py` | 校验 front matter、路径、链接 label、来源是否存在 |
+| `scripts/new_page.py` | 按 schema 页面类型生成新 wiki 页；默认要求 `--source-ref`，临时草稿可显式传 `--allow-empty-source-refs` |
+| `scripts/refresh_indexes.py` | 刷新 `knowledge/raw/README.md` 与 `knowledge/wiki/README.md` 自动索引区 |
 
-默认前提：这个 skill 可安装在任意位置；项目知识内容始终存放在“正在使用该 skill 的当前项目根目录”的 `knowledge/` 目录下。
+默认前提：这个 skill 可安装在任意位置；**规范真源**在 skill 的 `references/schema.md`，**项目实例**在目标仓库的 `knowledge/`。

@@ -19,6 +19,8 @@ import re
 import sys
 from pathlib import Path
 
+from knowledge_bootstrap import ensure_knowledge_structure
+
 
 ALLOWED_TYPES = {"domain", "concept", "flow", "integration", "data-model", "runbook", "decision"}
 ALLOWED_STATUS = {"draft", "reviewed", "canonical"}
@@ -32,8 +34,6 @@ REQUIRED_KEYS = {
     "related_pages",
 }
 
-WIKI_DIRS = ("domains", "concepts", "flows", "integrations", "data-models", "runbooks", "decisions")
-
 
 def default_repo_root() -> Path:
     cwd = Path.cwd().resolve()
@@ -41,64 +41,6 @@ def default_repo_root() -> Path:
         if (path / ".git").exists():
             return path
     return cwd
-
-
-def write_if_missing(path: Path, content: str) -> None:
-    if not path.exists():
-        path.write_text(content, encoding="utf-8")
-
-
-def ensure_knowledge_structure(repo_root: Path) -> None:
-    knowledge_root = repo_root / "knowledge"
-    wiki_root = knowledge_root / "wiki"
-    raw_root = knowledge_root / "raw"
-
-    for directory in (knowledge_root, wiki_root, raw_root, *(wiki_root / dirname for dirname in WIKI_DIRS)):
-        directory.mkdir(parents=True, exist_ok=True)
-
-    write_if_missing(
-        knowledge_root / "README.md",
-        """# Project Knowledge
-
-This directory contains the project-local LLM wiki.
-
-- `wiki/`: curated project knowledge pages
-- `raw/`: index of source artifacts used by the wiki
-""",
-    )
-    write_if_missing(
-        knowledge_root / "SCHEMA.md",
-        """# Knowledge Schema
-
-Wiki pages use YAML front matter with these required keys:
-
-- `title`
-- `type`
-- `status`
-- `owner`
-- `last_verified_at`
-- `source_refs`
-- `related_pages`
-
-`source_refs` and `related_pages` must use paths relative to the project root.
-""",
-    )
-    write_if_missing(
-        wiki_root / "README.md",
-        """# Wiki Index
-
-<!-- AUTO-GENERATED:START -->
-<!-- AUTO-GENERATED:END -->
-""",
-    )
-    write_if_missing(
-        raw_root / "README.md",
-        """# Raw Source Index
-
-<!-- AUTO-GENERATED:START -->
-<!-- AUTO-GENERATED:END -->
-""",
-    )
 
 
 def parse_front_matter(text: str, path: Path) -> dict[str, object]:
@@ -179,8 +121,8 @@ def resolve_markdown_link(page_path: Path, target: str) -> Path:
     return (page_path.parent / target).resolve()
 
 
-def is_path_like_label(label: str) -> bool:
-    return "/" in label or bool(Path(label).suffix)
+def is_invalid_link_label(label: str) -> bool:
+    return "/" in label or "\\" in label
 
 
 def validate_page(page_path: Path, repo_root: Path) -> list[str]:
@@ -236,13 +178,10 @@ def validate_page(page_path: Path, repo_root: Path) -> list[str]:
         if not resolved.exists():
             errors.append(f"{page_path}: markdown link target path does not exist '{target}'")
             continue
-        try:
-            repo_relative_target = resolved.relative_to(repo_root).as_posix()
-        except ValueError:
-            errors.append(f"{page_path}: markdown link target escapes repo root '{target}'")
-            continue
-        if is_path_like_label(label) and (not is_repo_relative(label) or label != repo_relative_target):
-            errors.append(f"{page_path}: markdown link label must be project-relative '{label}'")
+        if is_invalid_link_label(label):
+            errors.append(
+                f"{page_path}: markdown link label must be filename only (no path segments), got '{label}'"
+            )
 
     return errors
 
