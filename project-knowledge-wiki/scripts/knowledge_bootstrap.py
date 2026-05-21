@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import sys
 from pathlib import Path
 
 WIKI_DIRS = (
@@ -41,11 +43,13 @@ def ensure_knowledge_structure(repo_root: Path) -> None:
         knowledge_root / "README.md",
         """# Project Knowledge
 
-This directory contains the project-local LLM wiki.
+This directory contains the project-local LLM wiki (Markdown pages and indexes only).
 
 - `wiki/`: curated project knowledge pages
 - `raw/`: index of source artifacts used by the wiki
 - `SCHEMA.md`: structure, metadata, citation rules, and templates
+
+Maintenance scripts (bootstrap, lint, migrate, etc.) live in the skill install directory, not here.
 """,
     )
     write_if_missing(knowledge_root / "SCHEMA.md", load_schema_template())
@@ -65,3 +69,26 @@ This directory contains the project-local LLM wiki.
 <!-- AUTO-GENERATED:END -->
 """,
     )
+
+
+def default_repo_root() -> Path:
+    cwd = Path.cwd().resolve()
+    for path in (cwd, *cwd.parents):
+        if (path / ".git").exists():
+            return path
+    return cwd
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Create the minimal repo-local knowledge/ structure")
+    parser.add_argument("--repo-root", type=Path, default=default_repo_root())
+    args = parser.parse_args()
+
+    repo_root = args.repo_root.resolve()
+    ensure_knowledge_structure(repo_root)
+    print(f"[OK] ensured knowledge structure under {repo_root / 'knowledge'}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

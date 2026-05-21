@@ -12,27 +12,8 @@ import sys
 from pathlib import Path
 
 from knowledge_bootstrap import ensure_knowledge_structure
-
-
-TYPE_TO_DIR = {
-    "domain": "domains",
-    "concept": "concepts",
-    "flow": "flows",
-    "integration": "integrations",
-    "data-model": "data-models",
-    "runbook": "runbooks",
-    "decision": "decisions",
-}
-
-TYPE_TO_SECTIONS = {
-    "domain": ["这是什么", "核心对象", "核心入口", "关键流程", "边界与例外", "风险与待确认项", "Sources"],
-    "concept": ["定义", "使用位置", "关键约束", "常见误解", "风险与待确认项", "Sources"],
-    "flow": ["触发条件", "流程步骤", "关键落库/调用点", "异常与回退", "Sources"],
-    "integration": ["这是什么", "关键依赖", "调用方式", "异常点", "Sources"],
-    "data-model": ["定义", "关键字段", "关联关系", "边界与例外", "Sources"],
-    "runbook": ["何时执行", "执行步骤", "校验方式", "常见失败点", "Sources"],
-    "decision": ["背景", "决策", "原因", "结果", "不做什么", "Sources"],
-}
+from knowledge_config import TYPE_TO_DIR, TYPE_TO_SECTIONS
+from knowledge_links import is_repo_relative, repo_ref_link
 
 
 def default_repo_root() -> Path:
@@ -49,22 +30,36 @@ def slugify(value: str) -> str:
     return slug
 
 
-def is_repo_relative(raw_path: str) -> bool:
-    if not raw_path:
-        return False
-    path = Path(raw_path)
-    if path.is_absolute():
-        return False
-    return not (raw_path.startswith("./") or raw_path.startswith("../") or raw_path.startswith("/"))
-
-
 def yaml_list(values: list[str]) -> str:
     if not values:
+        return "[]"
+    return "\n" + "\n".join(f"  - {value}" for value in values)
+
+
+def yaml_list_field(key: str, values: list[str]) -> str:
+    rendered = yaml_list(values)
+    if rendered.startswith("\n"):
+        return f"{key}:{rendered}"
+    return f"{key}: {rendered}"
+
+
+def source_section(page_path: Path, repo_root: Path, source_refs: list[str]) -> str:
+    if not source_refs:
         return ""
-    return "\n".join(f"  - {value}" for value in values)
+    links = "\n".join(f"- Source: {repo_ref_link(page_path, repo_root, source_ref)}" for source_ref in source_refs)
+    return f"\n{links}"
+
+
+def related_pages_section(page_path: Path, repo_root: Path, related_pages: list[str]) -> str:
+    if not related_pages:
+        return ""
+    links = "\n".join(f"- Ref: {repo_ref_link(page_path, repo_root, related_page)}" for related_page in related_pages)
+    return f"\n\n## Related Pages\n\n{links}"
 
 
 def build_content(
+    page_path: Path,
+    repo_root: Path,
     page_type: str,
     title: str,
     owner: str,
@@ -74,22 +69,26 @@ def build_content(
 ) -> str:
     today = dt.date.today().isoformat()
     sections = TYPE_TO_SECTIONS[page_type]
-    section_text = "\n\n".join(f"## {section}\n" for section in sections)
-    source_ref_text = yaml_list(source_refs)
-    related_page_text = yaml_list(related_pages)
+    rendered_sections = []
+    for section in sections:
+        body = source_section(page_path, repo_root, source_refs) if section == "Sources" else ""
+        rendered_sections.append(f"## {section}\n{body}")
+    section_text = "\n\n".join(rendered_sections)
+    related_pages_text = related_pages_section(page_path, repo_root, related_pages)
+    source_ref_text = yaml_list_field("source_refs", source_refs)
+    related_page_front_matter = yaml_list_field("related_pages", related_pages)
     return f"""---
 title: {title}
 type: {page_type}
 status: {status}
 owner: {owner}
 last_verified_at: {today}
-source_refs:
 {source_ref_text}
-related_pages:
-{related_page_text}
+{related_page_front_matter}
 ---
 
 {section_text}
+{related_pages_text}
 """
 
 
@@ -150,7 +149,16 @@ def main() -> int:
         return 1
 
     target_file.write_text(
-        build_content(args.page_type, args.title, args.owner, args.status, args.source_ref, args.related_page),
+        build_content(
+            target_file,
+            repo_root,
+            args.page_type,
+            args.title,
+            args.owner,
+            args.status,
+            args.source_ref,
+            args.related_page,
+        ),
         encoding="utf-8",
     )
     print(f"[OK] created {target_file}")

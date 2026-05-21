@@ -42,8 +42,10 @@ Schema 要点摘要（细节以 `references/schema.md` 为准）：
 **路径规则**：
 
 - `source_refs`、`related_pages`：相对**仓库根目录**，禁止 `./`、`../`、绝对路径
+- `source_refs`、`related_pages` 中的每一项，都必须在正文中有可跳转 Markdown 链接（`label` 与 front matter 路径一致，`target` 相对当前 wiki 页）；`source_refs` 用 `Source:`，`related_pages` 用 `Ref:`
 - 正文 Markdown 链接**目标**（圆括号）：相对**当前 wiki 文件**的可跳转路径
-- 正文 Markdown 链接 **label**（方括号）：仅**文件名**（含扩展名），不写目录
+- 正文 Markdown 链接 **label**（方括号）：**相对仓库根目录**的路径，与 `source_refs` 格式一致
+- 正文中所有源文件引用必须使用上述 Markdown 链接格式；`Source:` 行以链接开头，可在链接后附加说明
 
 **正文标注**：`Source:` / `Inference:` / `Open Question:`（不要把推断写成 canonical 事实）
 
@@ -56,13 +58,14 @@ Schema 要点摘要（细节以 `references/schema.md` 为准）：
    - 如果当前工作目录不在 Git 仓库内，就使用当前工作目录本身。
    - 如果用户显式指定项目目录或 `--repo-root`，以用户指定为准。
 2. 知识库始终读取和写入该项目根目录下的 `knowledge/`，不要读取 skill 自身安装目录里的 `knowledge/`。
-3. 如果该项目根目录下还没有 `knowledge/`，先创建最小知识库结构，再继续查询或更新：
+3. 项目 `knowledge/` **只存放 wiki 内容**（Markdown 页面、索引与 `SCHEMA.md`），**不存放维护脚本**。所有 bootstrap / lint / 迁移 / 建页 / 刷索引脚本都在 skill 自带的 `scripts/` 目录中运行，通过 `--repo-root` 操作目标项目。
+4. 如果该项目根目录下还没有 `knowledge/`，先创建最小知识库结构，再继续查询或更新：
    - `knowledge/README.md`
-   - `knowledge/SCHEMA.md`（由 `scripts/knowledge_bootstrap.py` 从 `references/schema.md` 写入）
+   - `knowledge/SCHEMA.md`（由 skill 的 `knowledge_bootstrap.py` 从 `references/schema.md` 写入）
    - `knowledge/wiki/README.md`
    - `knowledge/raw/README.md`
    - `knowledge/wiki/{domains,concepts,flows,integrations,data-models,runbooks,decisions}/`
-4. 运行附带脚本时，默认在当前项目根目录执行；如果从别的目录调用脚本，传入 `--repo-root /path/to/project`。
+5. 运行 skill 脚本时，在 skill 安装目录下执行（例如 `python /path/to/project-knowledge-wiki/scripts/lint_knowledge.py --repo-root /path/to/project`）；不要把脚本复制或同步到项目 `knowledge/` 中。
 
 ## 何时使用
 
@@ -76,7 +79,7 @@ Schema 要点摘要（细节以 `references/schema.md` 为准）：
 
 ## 核心规则
 
-1. 修改知识库前，先读项目 `knowledge/README.md` 与 `knowledge/SCHEMA.md`；若缺失，执行 lint 或 new_page 脚本完成 bootstrap。
+1. 修改知识库前，先读项目 `knowledge/README.md` 与 `knowledge/SCHEMA.md`；若缺失，通过 skill 的 `knowledge_bootstrap.py --repo-root <项目>` 完成 bootstrap。
 2. 查询知识时优先按 `canonical -> reviewed -> draft` 的顺序使用 `knowledge/wiki`。
 3. 如果 wiki 不足以支撑结论，再回退到 raw 文档和源码。
 4. 遵守 schema 第 6、7 节的路径与可信度标注规则。
@@ -96,26 +99,29 @@ Schema 要点摘要（细节以 `references/schema.md` 为准）：
 1. 先确认新增事实来自哪里：设计文档、SQL、脚本、代码变更、事故记录或发布检查单。
 2. 如果是新的重要来源或新的来源类别，先更新 `knowledge/raw/README.md`。
 3. 如果已有页面覆盖该主题，就更新原页面；如果原页面会明显过载，就新建页面。
-4. 新建页面时，可优先使用 `scripts/new_page.py`（章节结构对齐 schema 模板）。
-5. 更新后执行 `scripts/lint_knowledge.py`（校验项与 schema 第 4、6、8.3 节一致）。
-6. 如果页面索引发生变化，再执行 `scripts/refresh_indexes.py`。
+4. 新建页面时，可优先使用 skill 的 `new_page.py`（章节结构对齐 schema 模板）。
+5. 更新 wiki 页面时，必须同步更新该页 `last_verified_at`；更新后通过 skill 的 `lint_knowledge.py` 校验（校验项与 schema 第 4、6、8.3 节一致）。若页面仍使用旧版引用格式，先执行 skill 的 `migrate_source_links.py`。
+6. 如果页面索引发生变化，再执行 skill 的 `refresh_indexes.py`。
 
 ## 质量要求
 
 - 每个 wiki 页面都应包含符合 schema 的 front matter。
 - `source_refs` 应指向仓库内真实存在的文件或目录。
-- 页面完成实质性复核后，应更新 `last_verified_at`。
+- 页面完成实质性复核或内容更新后，应更新 `last_verified_at`；超过 30 天未验证会被 lint 判为陈旧。
 - 如果页面还不足以稳定复用，就保持 `draft`。
 
 更细的质量标准见 [references/quality-bar.md](./references/quality-bar.md)。
 
 ## 附带脚本
 
+以下脚本位于 **skill 安装目录**的 `scripts/` 下，不在项目 `knowledge/` 中。操作时传入 `--repo-root` 指向目标项目即可。
+
 | 脚本 | 作用 |
 |------|------|
-| `scripts/knowledge_bootstrap.py` | 创建 `knowledge/` 目录树；将 `references/schema.md` 写入 `knowledge/SCHEMA.md`（仅当不存在） |
-| `scripts/lint_knowledge.py` | 校验 front matter、路径、链接 label、来源是否存在 |
-| `scripts/new_page.py` | 按 schema 页面类型生成新 wiki 页；默认要求 `--source-ref`，临时草稿可显式传 `--allow-empty-source-refs` |
-| `scripts/refresh_indexes.py` | 刷新 `knowledge/raw/README.md` 与 `knowledge/wiki/README.md` 自动索引区 |
+| `knowledge_bootstrap.py` | 创建项目 `knowledge/` 目录树；将 `references/schema.md` 写入 `knowledge/SCHEMA.md`（仅当不存在） |
+| `lint_knowledge.py` | 只读校验 front matter、路径、链接 label、`Source:` 行、来源是否存在，以及 `last_verified_at` 是否超过 30 天 |
+| `migrate_source_links.py` | 将已有 wiki 页的源文件引用迁移为标准 Markdown 链接格式（repo-root label） |
+| `new_page.py` | 按 schema 页面类型生成新 wiki 页；默认要求 `--source-ref`，临时草稿可显式传 `--allow-empty-source-refs` |
+| `refresh_indexes.py` | 刷新 `knowledge/raw/README.md` 与 `knowledge/wiki/README.md` 自动索引区；可用 `--source-root` 补充 raw 来源目录 |
 
-默认前提：这个 skill 可安装在任意位置；**规范真源**在 skill 的 `references/schema.md`，**项目实例**在目标仓库的 `knowledge/`。
+默认前提：这个 skill 可安装在任意位置；**规范真源**在 skill 的 `references/schema.md`，**项目实例**在目标仓库的 `knowledge/`（仅 Markdown 内容与索引，不含脚本）。

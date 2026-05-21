@@ -7,23 +7,33 @@ Checks:
 - required metadata keys
 - allowed type/status values
 - repo-root relative source_refs and related_pages
+- body links exist for every source_refs and related_pages item
+- markdown link labels match repo-root relative paths
+- Source: lines start with a markdown link
 - referenced files/directories exist
 - last_verified_at format
+- stale pages older than 30 days by default
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime as dt
-import re
 import sys
 from pathlib import Path
 
 from knowledge_bootstrap import ensure_knowledge_structure
+from knowledge_config import ALLOWED_STATUS, ALLOWED_TYPES, STALE_AFTER_DAYS
+from knowledge_links import (
+    collect_valid_body_links,
+    is_repo_relative,
+    resolve_repo_ref,
+    validate_ref_lines,
+    validate_source_lines,
+)
+from knowledge_metadata import parse_front_matter
 
 
-ALLOWED_TYPES = {"domain", "concept", "flow", "integration", "data-model", "runbook", "decision"}
-ALLOWED_STATUS = {"draft", "reviewed", "canonical"}
 REQUIRED_KEYS = {
     "title",
     "type",
@@ -43,101 +53,20 @@ def default_repo_root() -> Path:
     return cwd
 
 
-def parse_front_matter(text: str, path: Path) -> dict[str, object]:
-    lines = text.splitlines()
-    if len(lines) < 3 or lines[0].strip() != "---":
-        raise ValueError(f"{path}: missing YAML front matter")
-
-    end_index = None
-    for index in range(1, len(lines)):
-        if lines[index].strip() == "---":
-            end_index = index
-            break
-    if end_index is None:
-        raise ValueError(f"{path}: unterminated YAML front matter")
-
-    data: dict[str, object] = {}
-    current_list_key: str | None = None
-
-    for raw_line in lines[1:end_index]:
-        if not raw_line.strip():
-            continue
-        if raw_line.startswith("  - "):
-            if current_list_key is None:
-                raise ValueError(f"{path}: list item without a parent key")
-            data.setdefault(current_list_key, [])
-            assert isinstance(data[current_list_key], list)
-            data[current_list_key].append(raw_line[4:].strip())
-            continue
-        if ":" not in raw_line:
-            raise ValueError(f"{path}: invalid front matter line: {raw_line}")
-
-        key, value = raw_line.split(":", 1)
-        key = key.strip()
-        value = value.strip()
-        if value:
-            data[key] = value
-            current_list_key = None
-        else:
-            data[key] = []
-            current_list_key = key
-
-    return data
-
-
-def is_repo_relative(raw_path: str) -> bool:
-    if not raw_path:
-        return False
-    path = Path(raw_path)
-    if path.is_absolute():
-        return False
-    if raw_path.startswith("./") or raw_path.startswith("../") or raw_path.startswith("/"):
-        return False
-    return True
-
-
-def is_external_link(target: str) -> bool:
-    return (
-        "://" in target
-        or target.startswith("#")
-        or target.startswith("mailto:")
-        or target.startswith("tel:")
-    )
-
-
-def normalize_markdown_link_target(target: str) -> str:
-    target = target.strip().strip("<>")
-    if "#" in target:
-        target = target.split("#", 1)[0]
-    return target
-
-
-def markdown_links(text: str) -> list[tuple[str, str]]:
-    pattern = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)(?:\s+['\"][^)]*['\"])?\)")
-    return [(match.group(1), match.group(2)) for match in pattern.finditer(text)]
-
-
-def resolve_markdown_link(page_path: Path, target: str) -> Path:
-    return (page_path.parent / target).resolve()
-
-
-def is_invalid_link_label(label: str) -> bool:
-    return "/" in label or "\\" in label
-
-
-def validate_page(page_path: Path, repo_root: Path) -> list[str]:
+def validate_page(page_path: Path, repo_root: Path, max_age_days: int, fail_on_stale: bool) -> tuple[list[str], list[str]]:
     errors: list[str] = []
+    warnings: list[str] = []
     text = page_path.read_text(encoding="utf-8")
 
     try:
         front_matter = parse_front_matter(text, page_path)
     except ValueError as exc:
-        return [str(exc)]
+        return [str(exc)], warnings
 
     missing = sorted(REQUIRED_KEYS - set(front_matter.keys()))
     if missing:
         errors.append(f"{page_path}: missing keys: {', '.join(missing)}")
-        return errors
+        return errors, warnings
 
     page_type = str(front_matter["type"])
     if page_type not in ALLOWED_TYPES:
@@ -149,9 +78,28 @@ def validate_page(page_path: Path, repo_root: Path) -> list[str]:
 
     last_verified_at = str(front_matter["last_verified_at"])
     try:
-        dt.datetime.strptime(last_verified_at, "%Y-%m-%d")
+        verified_date = dt.datetime.strptime(last_verified_at, "%Y-%m-%d").date()
     except ValueError:
         errors.append(f"{page_path}: invalid last_verified_at '{last_verified_at}'")
+    else:
+        age_days = (dt.date.today() - verified_date).days
+        if age_days < 0:
+            errors.append(f"{page_path}: last_verified_at '{last_verified_at}' is in the future")
+        elif age_days > max_age_days:
+            message = (
+                f"{page_path}: stale last_verified_at '{last_verified_at}' "
+                f"({age_days} days old, max {max_age_days}); update it after wiki review"
+            )
+            if fail_on_stale:
+                errors.append(message)
+            else:
+                warnings.append(message)
+
+    errors.extend(validate_source_lines(text, page_path))
+    errors.extend(validate_ref_lines(text, page_path))
+
+    body_links, link_errors = collect_valid_body_links(text, page_path, repo_root)
+    errors.extend(link_errors)
 
     for field_name in ("source_refs", "related_pages"):
         value = front_matter[field_name]
@@ -161,56 +109,91 @@ def validate_page(page_path: Path, repo_root: Path) -> list[str]:
         if field_name == "source_refs" and not value:
             errors.append(f"{page_path}: source_refs must not be empty")
         for item in value:
+            if not isinstance(item, str):
+                errors.append(f"{page_path}: {field_name} item must be a string, got {item!r}")
+                continue
             if not is_repo_relative(item):
                 errors.append(f"{page_path}: {field_name} contains non repo-relative path '{item}'")
                 continue
-            if not (repo_root / item).exists():
+            resolved_ref = resolve_repo_ref(repo_root, item)
+            if not resolved_ref.exists():
                 errors.append(f"{page_path}: {field_name} path does not exist '{item}'")
+                continue
+            if item not in body_links:
+                errors.append(
+                    f"{page_path}: {field_name} item '{item}' must have a jumpable body markdown link "
+                    f"with matching label '[{item}](...)'"
+                )
+            elif body_links[item] != resolved_ref:
+                errors.append(
+                    f"{page_path}: {field_name} item '{item}' has a body link label but target does not resolve correctly"
+                )
 
-    for label, target in markdown_links(text):
-        normalized = normalize_markdown_link_target(target)
-        if not normalized or is_external_link(normalized):
-            continue
-        if Path(normalized).is_absolute():
-            errors.append(f"{page_path}: markdown link target must not be absolute '{target}'")
-            continue
-        resolved = resolve_markdown_link(page_path, normalized)
-        if not resolved.exists():
-            errors.append(f"{page_path}: markdown link target path does not exist '{target}'")
-            continue
-        if is_invalid_link_label(label):
-            errors.append(
-                f"{page_path}: markdown link label must be filename only (no path segments), got '{label}'"
-            )
-
-    return errors
+    return errors, warnings
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Lint the knowledge wiki")
     parser.add_argument("--repo-root", type=Path, default=default_repo_root())
+    parser.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="Create the minimal knowledge/ structure before linting if it is missing.",
+    )
+    parser.add_argument(
+        "--max-age-days",
+        type=int,
+        default=STALE_AFTER_DAYS,
+        help="Fail pages whose last_verified_at is older than this many days.",
+    )
+    parser.add_argument(
+        "--allow-stale",
+        action="store_true",
+        help="Report stale pages as warnings instead of lint errors.",
+    )
     args = parser.parse_args()
 
     repo_root = args.repo_root.resolve()
-    ensure_knowledge_structure(repo_root)
+    if args.bootstrap:
+        ensure_knowledge_structure(repo_root)
+
+    knowledge_root = repo_root / "knowledge"
+    if not knowledge_root.exists():
+        print(f"[ERROR] knowledge root not found: {knowledge_root}")
+        print("[HINT] run the skill's knowledge_bootstrap.py or pass --bootstrap to create the minimal structure")
+        return 1
+
     wiki_root = repo_root / "knowledge" / "wiki"
 
     if not wiki_root.exists():
         print(f"[ERROR] wiki root not found: {wiki_root}")
         return 1
 
+    knowledge_scripts = repo_root / "knowledge" / "scripts"
+    if knowledge_scripts.exists():
+        all_warnings.append(
+            f"{knowledge_scripts} should not exist; keep maintenance scripts in the skill, not in knowledge/"
+        )
+
     pages = sorted(path for path in wiki_root.rglob("*.md") if path.name != "README.md")
     all_errors: list[str] = []
+    all_warnings: list[str] = []
 
     for page in pages:
-        all_errors.extend(validate_page(page, repo_root))
+        errors, warnings = validate_page(page, repo_root, args.max_age_days, not args.allow_stale)
+        all_errors.extend(errors)
+        all_warnings.extend(warnings)
 
     if all_errors:
         for error in all_errors:
             print(f"[ERROR] {error}")
+        for warning in all_warnings:
+            print(f"[WARN] {warning}")
         print(f"[FAIL] knowledge lint found {len(all_errors)} issue(s)")
         return 1
 
+    for warning in all_warnings:
+        print(f"[WARN] {warning}")
     print(f"[OK] knowledge lint passed for {len(pages)} page(s)")
     return 0
 

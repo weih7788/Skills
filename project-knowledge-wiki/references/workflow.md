@@ -6,7 +6,7 @@
 
 回答项目问题时，按这个顺序查找：
 
-0. 确定当前项目根目录，并确保该根目录下存在 `knowledge/`；若不存在，运行 `scripts/lint_knowledge.py` 或 `scripts/new_page.py` 触发 bootstrap（会写入 `SCHEMA.md`）。
+0. 确定当前项目根目录，并确保该根目录下存在 `knowledge/`；若不存在，通过 skill 的 `knowledge_bootstrap.py --repo-root <项目>` 触发 bootstrap（会写入 `SCHEMA.md`）。**不要**把 skill 脚本复制到项目 `knowledge/` 中。
 1. `knowledge/wiki/README.md`
 2. 相关 `canonical` 页面
 3. 相关 `reviewed` 页面
@@ -21,10 +21,12 @@
 2. Locate the source artifact.
 3. 决定是更新已有页面，还是新建页面。
 4. `source_refs` / `related_pages` 使用仓库根目录相对路径。
-5. 正文链接：label 仅文件名；target 相对当前 wiki 文件（见 schema 第 6 节示例）。
+5. 为每个 `source_refs` / `related_pages` 条目在正文添加可跳转 Markdown 链接；所有源文件引用使用标准格式，label 为 repo-root 相对路径，target 相对当前 wiki 文件（见 schema 第 6 节）。
 6. 结论不确定时添加 `Open Question:`。
-7. 执行 `scripts/lint_knowledge.py`。
-8. 页面目录变化后执行 `scripts/refresh_indexes.py`。
+7. 每次更新 wiki 页面内容时，同步更新该页 `last_verified_at`。
+8. 通过 skill 的 `lint_knowledge.py --repo-root <项目>` 校验（校验项与 schema 第 4、6、8.3 节一致）。
+9. 如果页面使用了旧版引用格式，通过 skill 的 `migrate_source_links.py` 迁移后再 lint。
+10. 如果页面索引发生变化，再执行 skill 的 `refresh_indexes.py`。
 
 ## 页面状态提升
 

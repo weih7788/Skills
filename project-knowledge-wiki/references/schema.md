@@ -29,6 +29,7 @@
 - `raw` 只登记来源，不做事实改写
 - 原始文件可以在仓库原位置维护，不强制复制到 `knowledge/raw`
 - `knowledge/raw` 至少需要维护“来源目录”和“推荐阅读入口”
+- `knowledge/` 只存放 wiki 相关 Markdown 与索引，**不存放维护脚本**；bootstrap、lint、迁移等脚本均在 skill 的 `scripts/` 目录中
 
 ### 2.2 Wiki
 
@@ -126,6 +127,8 @@ related_pages:
 - `status=canonical`：当前推荐优先引用的知识页
 - `source_refs`：统一使用“相对仓库根目录”的路径，不使用绝对路径
 - `related_pages`：统一使用“相对仓库根目录”的 wiki 路径
+- `source_refs` 和 `related_pages` 是机器可读索引；其中每一项都必须在正文中有**可跳转** Markdown 链接（`label` 与 front matter 路径一致，`target` 相对当前 wiki 页），确保读者可直接跳转到目标文件或目录
+- `last_verified_at`：每次实质性更新或复核 wiki 页面时都必须更新；超过 30 天未验证视为陈旧知识
 
 ## 5. 正文推荐结构
 
@@ -141,22 +144,44 @@ related_pages:
 
 ## 6. 引用规则
 
-### 6.1 `source_refs`
+### 6.1 `source_refs` 与 `related_pages`
 
-用于页面头部列出最主要的事实来源。
+用于页面头部列出最主要的事实来源（`source_refs`）与相关 wiki 页（`related_pages`）。
 
-### 6.2 正文引用
+要求：
 
-正文中建议用统一格式：
+- Front Matter 中保留 repo-root relative path，供脚本校验。
+- 正文必须为每个 `source_refs` 项提供符合第 6.2 节格式的可跳转 Markdown 链接，通常放在 `Sources` 小节，使用 `Source:` 前缀。
+- 正文必须为每个 `related_pages` 项提供符合第 6.2 节格式的可跳转 Markdown 链接，通常放在 `Related Pages` 小节或相关段落，使用 `Ref:` 前缀。
+- 链接 `label` 必须与 front matter 中的路径字符串完全一致，否则视为未满足可跳转要求。
 
-- `Source:` 明确来源
+### 6.2 源文件引用格式（强制）
+
+正文中**所有**源文件引用必须使用以下 Markdown 链接格式：
+
+```md
+[repo-root-relative-path](relative-from-current-wiki-page)
+```
+
+适用场景：
+
+- `Sources` 小节中每个 `source_refs` 条目（`Source:` 前缀）
+- `Related Pages` 小节中每个 `related_pages` 条目（`Ref:` 前缀）
+- 正文中任何 `Source:` 标注
+- 正文中指向仓库内源文件（设计文档、SQL、脚本、关键源码等）的引用
+
+正文标注前缀：
+
+- `Source:` 明确来源；行首必须是 Markdown 链接，可在链接后附加说明文字
+- `Ref:` 明确相关 wiki 页；行首必须是 Markdown 链接，可在链接后附加说明文字
 - `Inference:` 明确该结论是综合多个来源推断得到
 - `Open Question:` 明确仍需确认
 
 示例：
 
 ```md
-Source: [BusinessNo_design.md](../../../doc/design/entrust/BusinessNo_design.md)
+Source: [doc/design/entrust/BusinessNo_design.md](../../../doc/design/entrust/BusinessNo_design.md)
+Source: [doc/design/entrust/BusinessNo_design.md](../../../doc/design/entrust/BusinessNo_design.md) — 字段语义以此文档为准
 Inference: 当前 `thirdSystemNo` 已被统一定义为系统内部工作单号，但仍需核对所有历史脚本是否都已切换。
 Open Question: 是否存在仅在生产脚本中保留的旧字段回退逻辑。
 ```
@@ -164,19 +189,33 @@ Open Question: 是否存在仅在生产脚本中保留的旧字段回退逻辑�
 补充约定：
 
 - Front Matter 中的路径是 repo-root relative path，便于脚本检查和跨机器协作。
+- Front Matter 里的每个 `source_refs` / `related_pages` 条目，都必须能在正文中找到一个解析后指向同一目标的 Markdown 链接。
 - Markdown 正文中的链接**目标**（圆括号内）使用相对当前文件的标准相对路径，便于在 Git 平台和本地 IDE 中直接跳转。
-- Markdown 正文中的链接 **label**（方括号内）只写**文件名**（含扩展名），不写目录或 repo-root 路径。
+- Markdown 正文中的链接 **label**（方括号内）使用**相对仓库根目录**的路径，格式与 `source_refs` / `related_pages` 一致。
 
 链接写法示例（以 `knowledge/wiki/concepts/foo.md` 引用设计文档为例）：
 
 ```md
-Source: [BusinessNo_design.md](../../../doc/design/entrust/BusinessNo_design.md)
+Source: [doc/design/entrust/BusinessNo_design.md](../../../doc/design/entrust/BusinessNo_design.md)
 ```
 
-- 方括号内：`BusinessNo_design.md`（仅文件名）
+- 方括号内：`doc/design/entrust/BusinessNo_design.md`（repo-root 相对路径）
 - 圆括号内：`../../../doc/design/entrust/BusinessNo_design.md`（相对当前 wiki 页的可跳转路径）
 
-wiki 内互链时同样只写目标页文件名，例如 `[release-monitoring-execution.md](../flows/release-monitoring-execution.md)`。
+不允许的写法：
+
+- 纯文本路径：`Source: doc/design/foo.md`
+- 仅反引号路径：`Source: \`doc/design/foo.md\``
+- label 仅写文件名：`Source: [foo.md](../../../doc/design/foo.md)`
+
+wiki 内互链（`related_pages`）示例：
+
+```md
+Ref: [knowledge/wiki/flows/release-monitoring-execution.md](../flows/release-monitoring-execution.md)
+```
+
+- 方括号内：`knowledge/wiki/flows/release-monitoring-execution.md`（与 `related_pages` 一致）
+- 圆括号内：相对当前 wiki 页的可跳转路径
 
 ## 7. 内容约束
 
@@ -213,7 +252,10 @@ LLM 或研发检索时，优先顺序建议：
 后续可自动检查：
 
 - 页面无 `source_refs`
-- 页面超过 90 天未验证
+- `source_refs` / `related_pages` 未在正文提供可跳转链接，或链接 label 与 front matter 路径不一致
+- `Source:` / `Ref:` 行未以 Markdown 链接开头
+- Markdown 链接 label 不是 repo-root 相对路径，或与 target 解析结果不一致
+- 页面超过 30 天未验证
 - 页面引用的源码路径不存在
 - 同一概念存在多个冲突页面
 - `Open Question` 长期未关闭
@@ -268,6 +310,8 @@ related_pages: []
 ## 约束
 
 ## 常见误解
+
+## 风险与待确认项
 
 ## Sources
 ```
