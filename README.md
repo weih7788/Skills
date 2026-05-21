@@ -2,7 +2,7 @@
 
 这是一个用于集中维护和同步 Agent Skills 的仓库。仓库中的 skill 可以通过 `sync.sh` 以符号链接的方式安装到不同 AI 工具的项目级或全局技能目录中，避免在多个工具各自的私有路径下重复维护同一份内容。
 
-当前仓库主要包含 `project-knowledge-wiki`、`plan` 和 `run`：`project-knowledge-wiki` 用于帮助 Agent 查询、生成和维护项目内的 `knowledge/` 知识库，`plan` 用于在实现前产出可评审的技术方案和改动预案，`run` 用于承接方案并完成实现、验证和交付闭环。
+当前仓库主要包含 `project-knowledge-wiki`、`plan`、`run` 和 `review`：`project-knowledge-wiki` 用于帮助 Agent 查询、生成和维护项目内的 `knowledge/` 知识库，`plan` 用于在实现前产出可评审的技术方案和改动预案，`run` 用于承接方案并完成实现、验证和交付闭环，`review` 用于审查最近代码或方案修改中的明显 bug、潜在风险和验证缺口。
 
 ## 目录结构
 
@@ -15,6 +15,7 @@
 │   └── scripts/                 # 知识库页面生成、lint、索引刷新脚本
 ├── plan/                        # 实现前技术方案 skill
 ├── run/                         # 按方案实现与验证 skill
+├── review/                      # 最近改动风险审查 skill
 └── sync.sh                      # 将本仓库 skill 同步到目标 AI 工具目录
 ```
 
@@ -25,6 +26,7 @@
 - 选择性同步：可以只同步某一个 skill，适合逐步发布或局部调试。
 - 实现前方案化：`plan` 会引导 Agent 先阅读代码，再输出改动范围、取舍、before / after 和验证计划。
 - 方案后执行闭环：`run` 会承接已明确的方案，按范围实现代码、执行验证并说明偏差和剩余风险。
+- 最近改动审查：`review` 会分析上下文、未提交改动或最新提交，列出风险项、原因和建议，但不擅自修改代码或方案。
 - 知识库维护辅助：`project-knowledge-wiki` 提供页面模板、规范校验和索引刷新脚本，帮助把项目事实沉淀到仓库本地的 `knowledge/`。
 
 ## 当前 Skill
@@ -75,6 +77,19 @@ python project-knowledge-wiki/scripts/refresh_indexes.py
 - 需要最终汇报完成内容、验证结果、未覆盖风险和下一步 review 重点。
 
 `run/SKILL.md` 是入口规则，`run/references/` 保存执行流程和交付汇报约束。
+
+### `review`
+
+用于审查代码或方案的最近一次修改，判断是否存在明显 bug、潜在风险、遗漏验证或实现偏差，并以风险项、原因和建议的形式输出结论。
+
+适用场景：
+
+- 用户要求 review、审查、检查最新提交或未提交改动。
+- 需要分析上下文中的方案修改是否有逻辑漏洞、范围偏差或落地风险。
+- 需要在实现后进入代码审查视角，优先找行为回归、数据一致性、安全、兼容性、并发幂等和边界条件问题。
+- 用户只希望获得风险和建议，不希望 Agent 擅自修改代码、方案或测试。
+
+`review/SKILL.md` 是入口规则，`review/agents/openai.yaml` 提供面向 OpenAI/Agent 平台的界面描述。
 
 ## 同步用法
 
