@@ -1,0 +1,6 @@
+interface:
+  display_name: "Review 审查"
+  short_description: "审查最近代码或方案修改的风险"
+  default_prompt: "使用 $review 审查最近一次代码或方案修改，并列出风险项、原因和建议。"
+policy:
+  allow_implicit_invocation: true
