@@ -13,15 +13,8 @@ from pathlib import Path
 
 from knowledge_bootstrap import ensure_knowledge_structure
 from knowledge_config import TYPE_TO_DIR, TYPE_TO_SECTIONS
-from knowledge_links import is_repo_relative, repo_ref_link
-
-
-def default_repo_root() -> Path:
-    cwd = Path.cwd().resolve()
-    for path in (cwd, *cwd.parents):
-        if (path / ".git").exists():
-            return path
-    return cwd
+from knowledge_links import is_repo_relative, ref_link, resolve_related_ref, resolve_source_ref
+from knowledge_resolver import default_repo_root, resolve_knowledge_layout
 
 
 def slugify(value: str) -> str:
@@ -43,23 +36,23 @@ def yaml_list_field(key: str, values: list[str]) -> str:
     return f"{key}: {rendered}"
 
 
-def source_section(page_path: Path, repo_root: Path, source_refs: list[str]) -> str:
+def source_section(page_path: Path, layout, source_refs: list[str]) -> str:
     if not source_refs:
         return ""
-    links = "\n".join(f"- Source: {repo_ref_link(page_path, repo_root, source_ref)}" for source_ref in source_refs)
+    links = "\n".join(f"- Source: {ref_link(page_path, layout, source_ref, kind='source')}" for source_ref in source_refs)
     return f"\n{links}"
 
 
-def related_pages_section(page_path: Path, repo_root: Path, related_pages: list[str]) -> str:
+def related_pages_section(page_path: Path, layout, related_pages: list[str]) -> str:
     if not related_pages:
         return ""
-    links = "\n".join(f"- Ref: {repo_ref_link(page_path, repo_root, related_page)}" for related_page in related_pages)
+    links = "\n".join(f"- Ref: {ref_link(page_path, layout, related_page, kind='related')}" for related_page in related_pages)
     return f"\n\n## Related Pages\n\n{links}"
 
 
 def build_content(
     page_path: Path,
-    repo_root: Path,
+    layout,
     page_type: str,
     title: str,
     owner: str,
@@ -71,10 +64,10 @@ def build_content(
     sections = TYPE_TO_SECTIONS[page_type]
     rendered_sections = []
     for section in sections:
-        body = source_section(page_path, repo_root, source_refs) if section == "Sources" else ""
+        body = source_section(page_path, layout, source_refs) if section == "Sources" else ""
         rendered_sections.append(f"## {section}\n{body}")
     section_text = "\n\n".join(rendered_sections)
-    related_pages_text = related_pages_section(page_path, repo_root, related_pages)
+    related_pages_text = related_pages_section(page_path, layout, related_pages)
     source_ref_text = yaml_list_field("source_refs", source_refs)
     related_page_front_matter = yaml_list_field("related_pages", related_pages)
     return f"""---
@@ -103,13 +96,13 @@ def main() -> int:
         "--source-ref",
         action="append",
         default=[],
-        help="Repo-root relative source path. Repeat for multiple sources.",
+        help="Relative source path (project repo or knowledge wiki). Repeat for multiple sources.",
     )
     parser.add_argument(
         "--related-page",
         action="append",
         default=[],
-        help="Repo-root relative related wiki page path. Repeat for multiple pages.",
+        help="Relative related wiki page path. Repeat for multiple pages.",
     )
     parser.add_argument(
         "--allow-empty-source-refs",
@@ -117,22 +110,36 @@ def main() -> int:
         help="Create a draft without source_refs. The page will not pass lint until sources are added.",
     )
     parser.add_argument("--repo-root", type=Path, default=default_repo_root())
+    parser.add_argument(
+        "--knowledge-root",
+        type=Path,
+        default=None,
+        help="Explicit knowledge root. Defaults to knowledge.md config or repo_root/knowledge.",
+    )
     args = parser.parse_args()
 
-    repo_root = args.repo_root.resolve()
-    ensure_knowledge_structure(repo_root)
+    layout = resolve_knowledge_layout(args.repo_root.resolve(), args.knowledge_root)
+    ensure_knowledge_structure(layout.knowledge_root)
 
     if not args.source_ref and not args.allow_empty_source_refs:
         print("[ERROR] at least one --source-ref is required; use --allow-empty-source-refs for scratch drafts")
         return 1
 
-    for field_name, values in (("--source-ref", args.source_ref), ("--related-page", args.related_page)):
+    for field_name, values, resolver in (
+        ("--source-ref", args.source_ref, resolve_source_ref),
+        ("--related-page", args.related_page, resolve_related_ref),
+    ):
         for value in values:
             if not is_repo_relative(value):
-                print(f"[ERROR] {field_name} must be repo-root relative without ./ or ../: {value}")
+                print(f"[ERROR] {field_name} must be relative without ./ or ../: {value}")
                 return 1
-            if not (repo_root / value).exists():
+            try:
+                resolver(value, layout)
+            except FileNotFoundError:
                 print(f"[ERROR] {field_name} path does not exist: {value}")
+                return 1
+            except ValueError as exc:
+                print(f"[ERROR] {field_name} invalid path: {exc}")
                 return 1
 
     slug = args.slug or slugify(args.title)
@@ -140,7 +147,7 @@ def main() -> int:
         print("[ERROR] failed to build slug")
         return 1
 
-    target_dir = repo_root / "knowledge" / "wiki" / TYPE_TO_DIR[args.page_type]
+    target_dir = layout.wiki_root / TYPE_TO_DIR[args.page_type]
     target_dir.mkdir(parents=True, exist_ok=True)
     target_file = target_dir / f"{slug}.md"
 
@@ -151,7 +158,7 @@ def main() -> int:
     target_file.write_text(
         build_content(
             target_file,
-            repo_root,
+            layout,
             args.page_type,
             args.title,
             args.owner,

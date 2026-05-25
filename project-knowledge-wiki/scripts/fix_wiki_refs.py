@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 Ensure every source_refs / related_pages front-matter item has a jumpable body link
-with repo-root relative label. Appends missing Source:/Ref: lines to Sources /
-Related Pages sections (creates sections when absent).
+with matching label. Appends missing Source:/Ref: lines to Sources / Related Pages sections.
 """
 
 from __future__ import annotations
@@ -12,17 +11,10 @@ import re
 import sys
 from pathlib import Path
 
-from knowledge_links import collect_valid_body_links, repo_ref_link
+from knowledge_links import collect_valid_body_links, ref_link
 from knowledge_metadata import parse_front_matter
+from knowledge_resolver import default_repo_root, resolve_knowledge_layout
 from migrate_source_links import migrate_page
-
-
-def default_repo_root() -> Path:
-    cwd = Path.cwd().resolve()
-    for path in (cwd, *cwd.parents):
-        if (path / ".git").exists():
-            return path
-    return cwd
 
 
 SOURCES_HEADING = re.compile(r"^##\s+Sources\s*$", re.MULTILINE)
@@ -61,7 +53,7 @@ def split_body_sections(body: str) -> tuple[str, str | None, str | None]:
     return prefix, sources_block, related_block
 
 
-def append_lines(block: str | None, heading: str, prefix: str, new_lines: list[str]) -> str:
+def append_lines(block: str | None, heading: str, new_lines: list[str]) -> str:
     if not new_lines:
         return block or ""
     entries = "\n".join(new_lines)
@@ -70,9 +62,9 @@ def append_lines(block: str | None, heading: str, prefix: str, new_lines: list[s
     return f"{heading}\n\n{entries}\n"
 
 
-def fix_page(page_path: Path, repo_root: Path, *, write: bool = True) -> int:
+def fix_page(page_path: Path, layout, *, write: bool = True) -> int:
     original_text = page_path.read_text(encoding="utf-8")
-    text, migrate_changes = migrate_page(page_path, repo_root)
+    text, migrate_changes = migrate_page(page_path, layout)
     try:
         front_matter = parse_front_matter(text, page_path)
     except ValueError:
@@ -81,7 +73,7 @@ def fix_page(page_path: Path, repo_root: Path, *, write: bool = True) -> int:
     source_refs = [str(x) for x in front_matter.get("source_refs", []) if isinstance(x, str)]
     related_pages = [str(x) for x in front_matter.get("related_pages", []) if isinstance(x, str)]
 
-    body_links, _ = collect_valid_body_links(text, page_path, repo_root)
+    body_links, _ = collect_valid_body_links(text, page_path, layout)
     missing_sources = [ref for ref in source_refs if ref not in body_links]
     missing_related = [ref for ref in related_pages if ref not in body_links]
 
@@ -102,14 +94,11 @@ def fix_page(page_path: Path, repo_root: Path, *, write: bool = True) -> int:
 
     prefix, sources_block, related_block = split_body_sections(body)
 
-    source_lines = [
-        f"Source: {repo_ref_link(page_path, repo_root, ref)}"
-        for ref in missing_sources
-    ]
-    ref_lines = [f"Ref: {repo_ref_link(page_path, repo_root, ref)}" for ref in missing_related]
+    source_lines = [f"Source: {ref_link(page_path, layout, ref, kind='source')}" for ref in missing_sources]
+    ref_lines = [f"Ref: {ref_link(page_path, layout, ref, kind='related')}" for ref in missing_related]
 
-    sources_block = append_lines(sources_block, "## Sources", "Source:", source_lines)
-    related_block = append_lines(related_block, "## Related Pages", "Ref:", ref_lines)
+    sources_block = append_lines(sources_block, "## Sources", source_lines)
+    related_block = append_lines(related_block, "## Related Pages", ref_lines)
 
     new_body = prefix
     if sources_block:
@@ -129,11 +118,17 @@ def fix_page(page_path: Path, repo_root: Path, *, write: bool = True) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fix missing wiki source_refs / related_pages body links")
     parser.add_argument("--repo-root", type=Path, default=default_repo_root())
+    parser.add_argument(
+        "--knowledge-root",
+        type=Path,
+        default=None,
+        help="Explicit knowledge root. Defaults to knowledge.md config or repo_root/knowledge.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    repo_root = args.repo_root.resolve()
-    wiki_root = repo_root / "knowledge" / "wiki"
+    layout = resolve_knowledge_layout(args.repo_root.resolve(), args.knowledge_root)
+    wiki_root = layout.wiki_root
     if not wiki_root.exists():
         print(f"[ERROR] wiki root not found: {wiki_root}")
         return 1
@@ -143,7 +138,7 @@ def main() -> int:
     total_changes = 0
 
     for page in pages:
-        changes = fix_page(page, repo_root, write=not args.dry_run)
+        changes = fix_page(page, layout, write=not args.dry_run)
         if changes:
             updated += 1
             total_changes += changes

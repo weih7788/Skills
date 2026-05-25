@@ -6,6 +6,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from knowledge_resolver import default_repo_root, resolve_knowledge_layout
+
 WIKI_DIRS = (
     "domains",
     "concepts",
@@ -16,23 +18,19 @@ WIKI_DIRS = (
     "decisions",
 )
 
-SKILL_ROOT = Path(__file__).resolve().parent.parent
-SCHEMA_TEMPLATE_PATH = SKILL_ROOT / "references" / "schema.md"
-
-
-def load_schema_template() -> str:
-    if not SCHEMA_TEMPLATE_PATH.exists():
-        raise FileNotFoundError(f"schema template not found: {SCHEMA_TEMPLATE_PATH}")
-    return SCHEMA_TEMPLATE_PATH.read_text(encoding="utf-8")
-
-
 def write_if_missing(path: Path, content: str) -> None:
     if not path.exists():
         path.write_text(content, encoding="utf-8")
 
 
-def ensure_knowledge_structure(repo_root: Path) -> None:
-    knowledge_root = repo_root / "knowledge"
+def ensure_knowledge_structure(knowledge_root: Path, *, create_root: bool = True) -> None:
+    if knowledge_root.is_dir():
+        pass
+    elif create_root:
+        knowledge_root.mkdir(parents=True, exist_ok=True)
+    else:
+        raise FileNotFoundError(f"knowledge root does not exist: {knowledge_root}")
+
     wiki_root = knowledge_root / "wiki"
     raw_root = knowledge_root / "raw"
 
@@ -47,12 +45,11 @@ This directory contains the project-local LLM wiki (Markdown pages and indexes o
 
 - `wiki/`: curated project knowledge pages
 - `raw/`: index of source artifacts used by the wiki
-- `SCHEMA.md`: structure, metadata, citation rules, and templates
 
 Maintenance scripts (bootstrap, lint, migrate, etc.) live in the skill install directory, not here.
+Schema rules live in the skill's references/schema.md and are not copied into this knowledge root.
 """,
     )
-    write_if_missing(knowledge_root / "SCHEMA.md", load_schema_template())
     write_if_missing(
         wiki_root / "README.md",
         """# Wiki Index
@@ -71,22 +68,23 @@ Maintenance scripts (bootstrap, lint, migrate, etc.) live in the skill install d
     )
 
 
-def default_repo_root() -> Path:
-    cwd = Path.cwd().resolve()
-    for path in (cwd, *cwd.parents):
-        if (path / ".git").exists():
-            return path
-    return cwd
-
-
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Create the minimal repo-local knowledge/ structure")
+    parser = argparse.ArgumentParser(description="Create the minimal knowledge/ structure")
     parser.add_argument("--repo-root", type=Path, default=default_repo_root())
+    parser.add_argument(
+        "--knowledge-root",
+        type=Path,
+        default=None,
+        help="Explicit knowledge root. Defaults to knowledge.md config or repo_root/knowledge.",
+    )
     args = parser.parse_args()
 
-    repo_root = args.repo_root.resolve()
-    ensure_knowledge_structure(repo_root)
-    print(f"[OK] ensured knowledge structure under {repo_root / 'knowledge'}")
+    layout = resolve_knowledge_layout(args.repo_root.resolve(), args.knowledge_root)
+    ensure_knowledge_structure(layout.knowledge_root)
+    if layout.is_external:
+        print(f"[OK] ensured knowledge structure under {layout.knowledge_root} (external, via knowledge.md)")
+    else:
+        print(f"[OK] ensured knowledge structure under {layout.knowledge_root}")
     return 0
 
 

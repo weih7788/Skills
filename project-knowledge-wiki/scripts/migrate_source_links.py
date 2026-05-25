@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Migrate knowledge wiki pages to the repo-root relative markdown link label format.
+Migrate knowledge wiki pages to the standard markdown link label format.
 
 Updates:
-- Markdown link labels from filename-only to repo-root relative paths
-- Source: lines that use plain text repo-relative paths
+- Markdown link labels to canonical ref labels (repo or knowledge root relative)
+- Source: lines that use plain text relative paths
 """
 
 from __future__ import annotations
@@ -21,21 +21,16 @@ from knowledge_links import (
     is_external_link,
     is_repo_relative,
     normalize_markdown_link_target,
-    repo_ref_link,
+    ref_link,
+    resolve_related_ref,
     resolve_markdown_link,
-    to_repo_ref,
+    resolve_source_ref,
+    to_ref_label,
 )
+from knowledge_resolver import default_repo_root, resolve_knowledge_layout
 
 
-def default_repo_root() -> Path:
-    cwd = Path.cwd().resolve()
-    for path in (cwd, *cwd.parents):
-        if (path / ".git").exists():
-            return path
-    return cwd
-
-
-def migrate_link_labels(text: str, page_path: Path, repo_root: Path) -> tuple[str, int]:
+def migrate_link_labels(text: str, page_path: Path, layout) -> tuple[str, int]:
     changes = 0
 
     def replace_link(match: re.Match[str]) -> str:
@@ -49,7 +44,7 @@ def migrate_link_labels(text: str, page_path: Path, repo_root: Path) -> tuple[st
         if not resolved.exists():
             return match.group(0)
         try:
-            expected_label = to_repo_ref(repo_root, resolved)
+            expected_label = to_ref_label(resolved, layout)
         except ValueError:
             return match.group(0)
         if label == expected_label:
@@ -63,9 +58,10 @@ def migrate_link_labels(text: str, page_path: Path, repo_root: Path) -> tuple[st
 def migrate_prefixed_lines(
     text: str,
     page_path: Path,
-    repo_root: Path,
+    layout,
     line_pattern: re.Pattern[str],
     prefix_name: str,
+    kind: str,
 ) -> tuple[str, int]:
     changes = 0
 
@@ -84,11 +80,15 @@ def migrate_prefixed_lines(
         suffix = path_match.group(3) or ""
         if not is_repo_relative(repo_ref):
             return match.group(0)
-        resolved = (repo_root / repo_ref).resolve()
-        if not resolved.exists():
+        try:
+            if kind == "source":
+                resolve_source_ref(repo_ref, layout)
+            else:
+                resolve_related_ref(repo_ref, layout)
+        except (FileNotFoundError, ValueError):
             return match.group(0)
 
-        link = repo_ref_link(page_path, repo_root, repo_ref)
+        link = ref_link(page_path, layout, repo_ref, kind=kind)
         if suffix:
             link = f"{link} {suffix}"
         changes += 1
@@ -97,17 +97,23 @@ def migrate_prefixed_lines(
     return line_pattern.sub(replace_line, text), changes
 
 
-def migrate_page(page_path: Path, repo_root: Path) -> tuple[str, int]:
+def migrate_page(page_path: Path, layout) -> tuple[str, int]:
     text = page_path.read_text(encoding="utf-8")
-    text, link_changes = migrate_link_labels(text, page_path, repo_root)
-    text, source_changes = migrate_prefixed_lines(text, page_path, repo_root, SOURCE_LINE, "Source")
-    text, ref_changes = migrate_prefixed_lines(text, page_path, repo_root, REF_LINE, "Ref")
+    text, link_changes = migrate_link_labels(text, page_path, layout)
+    text, source_changes = migrate_prefixed_lines(text, page_path, layout, SOURCE_LINE, "Source", "source")
+    text, ref_changes = migrate_prefixed_lines(text, page_path, layout, REF_LINE, "Ref", "related")
     return text, link_changes + source_changes + ref_changes
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Migrate wiki source links to repo-root relative labels")
+    parser = argparse.ArgumentParser(description="Migrate wiki source links to canonical ref labels")
     parser.add_argument("--repo-root", type=Path, default=default_repo_root())
+    parser.add_argument(
+        "--knowledge-root",
+        type=Path,
+        default=None,
+        help="Explicit knowledge root. Defaults to knowledge.md config or repo_root/knowledge.",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -115,8 +121,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    repo_root = args.repo_root.resolve()
-    wiki_root = repo_root / "knowledge" / "wiki"
+    layout = resolve_knowledge_layout(args.repo_root.resolve(), args.knowledge_root)
+    wiki_root = layout.wiki_root
     if not wiki_root.exists():
         print(f"[ERROR] wiki root not found: {wiki_root}")
         return 1
@@ -126,7 +132,7 @@ def main() -> int:
     total_changes = 0
 
     for page in pages:
-        new_text, changes = migrate_page(page, repo_root)
+        new_text, changes = migrate_page(page, layout)
         if changes == 0:
             continue
         updated_pages += 1

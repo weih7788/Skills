@@ -59,6 +59,38 @@ Schema 用来约束：
 - 可信度标注
 - 维护流程
 
+### 2.4 外部私有知识库（可选）
+
+除项目内 `{repo_root}/knowledge/` 外，支持通过项目根目录 `knowledge.md` 将 wiki 指向本机绝对路径（`knowledge_root`）。多个项目可共用同一 `knowledge_root`。
+
+- `knowledge.md` 建议仅本机使用（加入 `.gitignore`），模板见 skill 的 `references/knowledge.md.example`
+- 外部模式下，wiki 文件位于 `{knowledge_root}/wiki/`，不在当前项目仓库内
+- **双根解析**：项目来源相对 `project_root`（未配置时自动等于解析后的 `repo_root`）；wiki 互链相对 `knowledge_root`（推荐 `wiki/...` 前缀）
+- **`project_root` 自动解析**：`knowledge.md` 未配置 `project_root` 时，须先解析 `repo_root`（`--repo-root` → 向上找 `.git` → 当前工作目录），再令 `project_root = repo_root`（均为 `.resolve()` 后的绝对路径）；禁止猜测 `../../../` 路径
+- **项目命名空间**：多个项目共用同一 `knowledge_root` 时，建议每个项目在 `knowledge.md` 配置稳定的 `project_key`（如 `backend`、`frontend`）。共享 wiki 页引用项目来源时可写 `project_key:path/to/source`，避免前后端同名路径冲突。
+- **外部模式链接 target**：wiki 正文引用项目源文件时，Markdown target 仍相对当前 wiki 页；**`raw/README.md` 索引**引用项目源文件时，Markdown target **必须**为 `project_root` 拼出的本机绝对路径（`< /abs/path/to/file >`），label 仍保留项目相对路径
+- **外部模式 raw 索引不可点链**：知识库在仓库外时，`raw/README.md` 若手写 `../../../project/...` 之类相对路径，Cursor/IDE 预览往往无法跳转；应运行 `refresh_indexes.py` 重新生成，不要手改相对路径
+- **路径须明确**：外部模式下，须由用户回答提供绝对路径，或项目 `knowledge.md` 已配置 `knowledge_root`；**不得在路径未明确时猜测或默认路径**
+- **路径明确后可自动创建**：上述条件满足时，目标目录不存在可由 bootstrap / 迁移脚本自动创建，并初始化 `wiki/`、`raw/` 等子结构
+
+发现顺序：
+
+- `knowledge_root`：`--knowledge-root` 参数 → `knowledge.md` → `{repo_root}/knowledge/`
+- `repo_root`：`--repo-root` 参数 → 从 cwd 向上找 `.git` → cwd
+- `project_root`：`knowledge.md` 中的 `project_root` → 未配置时使用上述 `repo_root` 的绝对路径
+- `project_key`：`knowledge.md` 中的 `project_key` → 未配置时使用 `project_root` 目录名
+
+#### 多项目共用与冲突规避
+
+外部知识库可以被前端、后端、运营脚本等多个项目共用，但写入时必须遵守下面的并发边界：
+
+- 每个项目使用不同且稳定的 `project_key`；目录改名不应导致历史 wiki 引用失效。
+- `source_refs` 引用当前项目来源时，可继续写 `doc/foo.md`；引用其他项目来源或编写跨端共享页面时，必须写成 `backend:doc/foo.md`、`frontend:src/foo.ts` 这类带命名空间的格式。
+- `refresh_indexes.py` 在外部模式下只更新 `raw/README.md` 中当前 `project_key` 的自动块，不覆盖其他项目块；不要手动合并或删除其他项目块。
+- `lint_knowledge.py` 在外部共享模式下只检查当前 `project_key` 相关页面和 raw 块；只引用其他项目来源的页面应静默跳过，并在最终摘要中计数。
+- `wiki/README.md` 是共享的全局页面索引，任一项目刷新都会按当前 `wiki/` 目录重新生成；它不包含项目私有扫描结果。
+- 共同编辑同一 wiki 页面前，先查看该页 `owner`、`source_refs` 和现有 `Open Question:`；跨端语义冲突时，新建或更新 `decision` 页面记录取舍，不要直接覆盖另一端结论。
+
 ## 3. 页面类型
 
 ### 3.1 `domains/`
@@ -125,8 +157,8 @@ related_pages:
 - `status=draft`：初稿，允许存在不完整项
 - `status=reviewed`：已有人审阅，但仍可能有局部过期
 - `status=canonical`：当前推荐优先引用的知识页
-- `source_refs`：统一使用“相对仓库根目录”的路径，不使用绝对路径
-- `related_pages`：统一使用“相对仓库根目录”的 wiki 路径
+- `source_refs`：项目来源相对**当前项目仓库根目录**；外部共享模式可用 `project_key:相对路径` 标明来源项目；wiki 互链可用 `wiki/...`（外部模式，相对 knowledge_root）或 `knowledge/wiki/...`（本地模式，相对 repo_root）
+- `related_pages`：同上；外部模式推荐 `wiki/{type}/{page}.md`
 - `source_refs` 和 `related_pages` 是机器可读索引；其中每一项都必须在正文中有**可跳转** Markdown 链接（`label` 与 front matter 路径一致，`target` 相对当前 wiki 页），确保读者可直接跳转到目标文件或目录
 - `last_verified_at`：每次实质性更新或复核 wiki 页面时都必须更新；超过 30 天未验证视为陈旧知识
 
@@ -150,7 +182,7 @@ related_pages:
 
 要求：
 
-- Front Matter 中保留 repo-root relative path，供脚本校验。
+- Front Matter 中保留相对路径字符串，供脚本校验（项目来源相对 `repo_root`，wiki 互链相对 `knowledge_root` 或 `repo_root`，见第 2.4 节）。
 - 正文必须为每个 `source_refs` 项提供符合第 6.2 节格式的可跳转 Markdown 链接，通常放在 `Sources` 小节，使用 `Source:` 前缀。
 - 正文必须为每个 `related_pages` 项提供符合第 6.2 节格式的可跳转 Markdown 链接，通常放在 `Related Pages` 小节或相关段落，使用 `Ref:` 前缀。
 - 链接 `label` 必须与 front matter 中的路径字符串完全一致，否则视为未满足可跳转要求。
@@ -160,8 +192,10 @@ related_pages:
 正文中**所有**源文件引用必须使用以下 Markdown 链接格式：
 
 ```md
-[repo-root-relative-path](relative-from-current-wiki-page)
+[ref-label](relative-from-current-wiki-page)
 ```
+
+其中 `ref-label` 与 front matter 中的路径字符串一致：项目来源为 repo-root 相对路径（如 `doc/design/foo.md`）或外部共享模式的项目命名空间路径（如 `backend:doc/design/foo.md`），wiki 互链在外部模式下为 `wiki/flows/example.md`。
 
 适用场景：
 
@@ -182,16 +216,23 @@ related_pages:
 ```md
 Source: [doc/design/entrust/BusinessNo_design.md](../../../doc/design/entrust/BusinessNo_design.md)
 Source: [doc/design/entrust/BusinessNo_design.md](../../../doc/design/entrust/BusinessNo_design.md) — 字段语义以此文档为准
+Source: [backend:doc/design/order.md](</Users/you/work/order-backend/doc/design/order.md>) — 共享外部知识库中引用后端项目来源
 Inference: 当前 `thirdSystemNo` 已被统一定义为系统内部工作单号，但仍需核对所有历史脚本是否都已切换。
 Open Question: 是否存在仅在生产脚本中保留的旧字段回退逻辑。
 ```
 
 补充约定：
 
-- Front Matter 中的路径是 repo-root relative path，便于脚本检查和跨机器协作。
+- Front Matter 中的路径是相对路径字符串，便于脚本检查；禁止 `./`、`../` 和绝对路径。
 - Front Matter 里的每个 `source_refs` / `related_pages` 条目，都必须能在正文中找到一个解析后指向同一目标的 Markdown 链接。
 - Markdown 正文中的链接**目标**（圆括号内）使用相对当前文件的标准相对路径，便于在 Git 平台和本地 IDE 中直接跳转。
-- Markdown 正文中的链接 **label**（方括号内）使用**相对仓库根目录**的路径，格式与 `source_refs` / `related_pages` 一致。
+- Markdown 正文中的链接 **label**（方括号内）与 `source_refs` / `related_pages` 路径字符串完全一致。
+
+外部模式下 wiki 互链示例：
+
+```md
+Ref: [wiki/flows/release-monitoring-execution.md](../flows/release-monitoring-execution.md)
+```
 
 链接写法示例（以 `knowledge/wiki/concepts/foo.md` 引用设计文档为例）：
 
@@ -216,6 +257,43 @@ Ref: [knowledge/wiki/flows/release-monitoring-execution.md](../flows/release-mon
 
 - 方括号内：`knowledge/wiki/flows/release-monitoring-execution.md`（与 `related_pages` 一致）
 - 圆括号内：相对当前 wiki 页的可跳转路径
+
+### 6.3 `raw/README.md` 索引（自动生成）
+
+`raw/README.md` 的 `AUTO-GENERATED` 块由 `refresh_indexes.py` 维护，**不要手改链接 target**。外部共享模式下，raw 索引按 `project_key` 分块维护。
+
+格式要求：
+
+- 每行以 `- Source:` 开头，后接 Markdown 链接
+- **label**：项目相对路径（本地模式）或 `project_key:项目相对路径`（外部共享模式），如 `backend:db/migration/V20260523_02__mp_points_card.sql`
+- **target**：
+  - **本地模式**（`knowledge_root` 在仓库内）：相对 `raw/README.md` 的可跳转路径
+  - **外部模式**（`knowledge_root` 在仓库外）：`project_root` 下的本机绝对路径，用尖括号包裹
+
+外部模式示例：
+
+```md
+## Project: backend
+
+<!-- AUTO-GENERATED:START project=backend -->
+- Source: [backend:db/points_mall.sql](</Users/you/work/points-mall-backend/db/points_mall.sql>)
+<!-- AUTO-GENERATED:END project=backend -->
+```
+
+不允许的写法（外部模式）：
+
+```md
+- [db/points_mall.sql](../../../work/points-mall-backend/db/points_mall.sql)
+- Source: [db/points_mall.sql](../../../work/points-mall-backend/db/points_mall.sql)
+```
+
+原因：外部知识库文件不在当前 Git 工作区内，跨目录 `../` 相对路径在 IDE Markdown 预览中通常无法解析。绝对路径由 `refresh_indexes.py` 根据解析后的 `project_root` 生成——若 `knowledge.md` 未配置，脚本会先按 `--repo-root` / `.git` 自动计算出 `repo_root` 并用作 `project_root`。
+
+修复方式：
+
+```bash
+python <skill>/scripts/refresh_indexes.py --repo-root <项目>
+```
 
 ## 7. 内容约束
 
@@ -257,6 +335,10 @@ LLM 或研发检索时，优先顺序建议：
 - Markdown 链接 label 不是 repo-root 相对路径，或与 target 解析结果不一致
 - 页面超过 30 天未验证
 - 页面引用的源码路径不存在
+- 外部模式下 `raw/README.md` 使用 `../` 相对 target（应运行 `refresh_indexes.py` 生成绝对路径）
+- `raw/README.md` 索引行缺少 `Source:` 前缀或链接 target 不存在
+- 外部共享模式下 `raw/README.md` 只有一个全局 raw 自动块，导致一个项目刷新时覆盖另一个项目的来源索引
+- 外部共享模式下从当前项目 lint 时逐条报告其他项目页面的路径不存在；这些页面应由所属项目 lint 校验
 - 同一概念存在多个冲突页面
 - `Open Question` 长期未关闭
 

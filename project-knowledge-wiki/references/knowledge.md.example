@@ -1,0 +1,5 @@
+knowledge_root: /Users/you/work/knowledge/your-product
+# 可选。未配置时，脚本从 --repo-root（或 .git 向上查找）自动解析 repo_root 并用作 project_root
+# project_root: /Users/you/work/projects/your-product
+# 可选。多个项目共用同一个 knowledge_root 时建议显式配置，作为 source_refs/raw 索引的项目命名空间
+# project_key: backend
