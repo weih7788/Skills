@@ -2,7 +2,7 @@
 
 这是一个用于集中维护和同步 Agent Skills 的仓库。仓库中的 skill 可以通过 `sync.sh` 以符号链接的方式安装到不同 AI 工具的项目级或全局技能目录中，避免在多个工具各自的私有路径下重复维护同一份内容。
 
-当前仓库主要包含 `project-knowledge-wiki`、`plan`、`run` 和 `review`：`project-knowledge-wiki` 用于帮助 Agent 查询、生成和维护项目内的 `knowledge/` 知识库，`plan` 用于在实现前产出可评审的技术方案和改动预案，`run` 用于承接方案并完成实现、验证和交付闭环，`review` 用于审查最近代码或方案修改中的明显 bug、潜在风险和验证缺口。
+当前仓库主要包含 `project-knowledge-wiki`、`refine-requirements`、`plan`、`run` 和 `review`：`project-knowledge-wiki` 用于帮助 Agent 查询、生成和维护项目内的 `knowledge/` 知识库，`refine-requirements` 用于打磨不完整或边界不清的产品需求，补齐规则、异常、验收标准、资损防护和 UI 确认图，`plan` 用于在实现前产出可评审的技术方案和改动预案，`run` 用于承接方案并完成实现、验证和交付闭环，`review` 用于审查最近代码或方案修改中的明显 bug、潜在风险和验证缺口。
 
 ## 目录结构
 
@@ -13,6 +13,7 @@
 │   ├── agents/openai.yaml       # 面向 OpenAI/Agent 平台的界面描述
 │   ├── references/              # 工作流、页面类型和质量标准
 │   └── scripts/                 # 知识库页面生成、lint、索引刷新脚本
+├── refine-requirements/         # 产品需求打磨与边界澄清 skill
 ├── plan/                        # 实现前技术方案 skill
 ├── run/                         # 按方案实现与验证 skill
 ├── review/                      # 最近改动风险审查 skill
@@ -24,6 +25,9 @@
 - 统一维护技能：在本仓库编辑 skill，再同步到 Codex、Claude、Cursor 或 Antigravity。
 - 按 AI 工具解析安装路径：支持项目级目录、全局目录和自定义目标目录。
 - 选择性同步：可以只同步某一个 skill，适合逐步发布或局部调试。
+- 需求打磨补全：`refine-requirements` 会结合项目上下文补齐需求目标、边界、规则、异常、验收标准和待确认问题。
+- 资损风险前置：涉及金额、余额、支付、计费、退款、结算、优惠、积分或额度等需求时，`refine-requirements` 会强制补充安全设计、幂等、并发、对账、审计和异常补偿要求。
+- UI 变更可视化：涉及 UI 新增或调整时，`refine-requirements` 会生成截图风格或产品原型风格的 UI 效果图，供用户确认关键页面和状态。
 - 实现前方案化：`plan` 会引导 Agent 先阅读代码，再输出改动范围、取舍、before / after 和验证计划。
 - 方案后执行闭环：`run` 会承接已明确的方案，按范围实现代码、执行验证并说明偏差和剩余风险。
 - 最近改动审查：`review` 会分析上下文、未提交改动或最新提交，列出风险项、原因和建议，但不擅自修改代码或方案。
@@ -51,6 +55,20 @@ python project-knowledge-wiki/scripts/refresh_indexes.py
 ```
 
 这些脚本默认会从当前目录向上寻找 Git 仓库根目录；如果从其他目录调用，可以传入 `--repo-root /path/to/project`。
+
+### `refine-requirements`
+
+用于在进入技术方案前打磨产品需求，补齐原始需求中缺失或边界不清的业务目标、用户流程、权限规则、状态流转、数据口径、异常场景、验收标准、风险和待确认问题。
+
+适用场景：
+
+- 产品需求、PRD、用户故事或口头想法不完整，需要补充成可评审需求稿。
+- 用户要求打磨需求、补充需求、完善边界，或结合当前项目扩展需求。
+- 需求会影响已有页面、接口、数据、权限、配置、通知、审批或外部系统。
+- 需求涉及金额、余额、支付、计费、退款、结算、优惠、积分、额度等可能导致资损的场景，需要前置补齐安全设计和资损防护要求。
+- 需求涉及 UI 新增或调整，需要生成 UI 效果图给用户确认页面布局、关键组件和状态反馈。
+
+`refine-requirements/SKILL.md` 是入口规则，`refine-requirements/agents/openai.yaml` 提供面向 OpenAI/Agent 平台的界面描述。
 
 ### `plan`
 

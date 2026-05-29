@@ -98,6 +98,17 @@ Schema 要点摘要（细节以 `references/schema.md` 为准）：
 2. 项目根目录 `knowledge.md` 中的 `knowledge_root`（**本机绝对路径**）
 3. fallback：`{repo_root}/knowledge/`（本地模式）
 
+### 目录发现防漏（`.gitignore` / `.cursorignore`）
+
+某些检索工具会遵循忽略规则，`knowledge/` 即使真实存在，也可能在文件检索结果中被隐藏（例如仓库配置了 `/knowledge/` 到 `.gitignore`）。
+
+为避免误判“知识库不存在”，必须遵循以下兜底顺序：
+
+1. 先按上面的发现顺序解析 `knowledge_root`。
+2. 如果 `Glob/rg` 返回空，**不要直接下结论不存在**。
+3. 必须用不依赖忽略规则的方式二次确认目录是否真实存在（例如 `ls <repo_root>`、`ls <knowledge_root>`，或直接 `ReadFile` 读取 `<knowledge_root>/README.md`）。
+4. 只有在兜底检查也失败时，才进入“未初始化”流程并询问用户选模式。
+
 ### knowledge.md 配置
 
 每个项目根目录可放置私有配置文件 `knowledge.md`（建议加入 `.gitignore`，仅本机使用）：
@@ -281,10 +292,11 @@ python <skill>/scripts/refresh_indexes.py --repo-root <项目>
 ## 查询工作流
 
 1. 解析 `knowledge_root`（读 `knowledge.md` 或使用本地 `knowledge/`）。
-2. 从 `{knowledge_root}/wiki/README.md` 开始定位页面。
-3. 优先打开最相关的 `canonical` 或 `reviewed` 页面。
-4. 如有需要，再结合 `{knowledge_root}/raw/README.md`、当前项目设计文档、SQL、脚本或源码做核对。
-5. 输出结论时，要区分“来源可证实的事实”和“综合推断”。
+2. 若检索结果为空，先做一次“目录发现防漏”兜底确认（见上文），避免被忽略规则误导。
+3. 从 `{knowledge_root}/wiki/README.md` 开始定位页面。
+4. 优先打开最相关的 `canonical` 或 `reviewed` 页面。
+5. 如有需要，再结合 `{knowledge_root}/raw/README.md`、当前项目设计文档、SQL、脚本或源码做核对。
+6. 输出结论时，要区分“来源可证实的事实”和“综合推断”。
 
 更细的流程说明见 [references/workflow.md](./references/workflow.md)。
 
