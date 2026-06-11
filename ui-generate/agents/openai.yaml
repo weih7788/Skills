@@ -1,0 +1,7 @@
+interface:
+  display_name: "UI Generate"
+  short_description: "Extract UI flows and generate coherent mockup image sets"
+  default_prompt: "Use $ui-generate to extract UI interaction requirements from context and generate coherent interaction mockup image sets."
+
+policy:
+  allow_implicit_invocation: true
