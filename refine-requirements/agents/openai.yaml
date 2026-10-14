@@ -1,7 +1,7 @@
 interface:
   display_name: "Refine Requirements"
-  short_description: "补齐产品需求的边界、规则、异常与验收标准"
-  default_prompt: "Use $refine-requirements to polish this product requirement, fill in missing boundaries, and produce review-ready acceptance criteria."
+  short_description: "按需求 ID 自动获取项目上下文，补齐业务规则、异常边界与验收标准"
+  default_prompt: "Use $refine-requirements with a requirement ID or description to retrieve project context and produce a detailed, review-ready requirement with acceptance criteria."
 
 policy:
   allow_implicit_invocation: true

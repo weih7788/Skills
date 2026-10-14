@@ -1,7 +1,7 @@
 interface:
   display_name: "知识库"
-  short_description: "查询并维护仓库内项目知识库"
-  default_prompt: "使用 $project-knowledge-wiki 回答这个项目问题，或更新 `knowledge/` 里的知识库内容。"
+  short_description: "查询并维护项目内或外部项目知识库"
+  default_prompt: "使用 $project-knowledge-wiki 查询或更新项目知识；先定位目标子项目并查找最近的 knowledge.md，有外部配置时优先使用外部知识库。"
 
 policy:
   allow_implicit_invocation: true

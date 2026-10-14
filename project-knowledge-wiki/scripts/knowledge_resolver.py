@@ -37,9 +37,24 @@ class KnowledgeLayout:
 
 def default_repo_root() -> Path:
     cwd = Path.cwd().resolve()
-    for path in (cwd, *cwd.parents):
-        if (path / ".git").exists():
+    ancestors = (cwd, *cwd.parents)
+    git_root = next((path for path in ancestors if (path / ".git").exists()), None)
+    search_paths = ancestors[: ancestors.index(git_root) + 1] if git_root is not None else ancestors
+
+    # A workspace may be a collection of subprojects inside one Git repository.
+    # Prefer the nearest subproject knowledge configuration over the outer Git root.
+    for path in search_paths:
+        if (path / KNOWLEDGE_CONFIG_FILE).is_file():
             return path
+
+    # Local-mode subprojects do not have knowledge.md. Use the nearest
+    # bootstrapped knowledge directory before falling back to the Git root.
+    for path in search_paths:
+        if (path / "knowledge" / "wiki").is_dir():
+            return path
+
+    if git_root is not None:
+        return git_root
     return cwd
 
 
