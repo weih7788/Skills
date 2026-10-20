@@ -115,9 +115,9 @@ Controller 接口注释示例：
 
 当本次执行涉及 MyBatis Mapper 的新增、生成或修改时，必须按下面规则检查：
 
-- SQL 必须定义在对应的 Mapper XML 中，包含静态 SQL、动态条件、批量语句和 `<script>` 内容。
+- 简单单表查询、排序、分页和增删改优先使用 MyBatis-Plus，不为这些操作编写 XML SQL。复杂联表、原子 upsert 等确需手写的 SQL 定义在 Mapper XML 中。
 - Java Mapper 接口不得使用 `@Select`、`@Insert`、`@Update`、`@Delete` 等注解直接承载 SQL 语句或 SQL 片段。
-- Mapper 接口只保留方法签名，以及 `@Param`、`@Mapper` 等不承载 SQL 的必要注解。
+- 自定义 XML SQL 对应的 Mapper 方法只保留签名及 `@Param`、`@Mapper` 等必要注解；Mapper 不编写 default 方法或 Wrapper 实现；简单 CRUD 在 Service 接口声明，在 ServiceImpl 中使用 MyBatis-Plus 实现。自定义 Mapper 方法与 XML 语句 id 一一对应，BaseMapper 继承方法无需 XML 映射。
 - 交付前检查新增或修改的 Mapper 接口及 XML，确认方法声明与 XML 的 `namespace`、语句 `id`、参数和结果映射一致。
 
 ## 工作区保护
@@ -137,6 +137,6 @@ Controller 接口注释示例：
 - 验证已执行到当前环境允许的程度。
 - 新增或修改的核心业务逻辑、关键分支、兼容性处理、非直观约束和复杂算法已补齐简洁有效的核心注释。
 - 涉及 Java 改动时，类、方法、DTO/VO/Entity 属性、Controller 接口和核心逻辑注释已补齐；类、方法、属性和 Controller 接口的 JavaDoc 均将 `/**`、正文、`*/` 分行书写，没有单行注释；Controller 接口已按实际签名补齐 `@param`、`@return`、`@throws`；service 接口方法已有注释时对应实现类方法也已补齐注释，且注释简洁有效。
-- 涉及 MyBatis Mapper 新增或修改时，SQL 已全部放入 Mapper XML，Java Mapper 接口中不存在 `@Select`、`@Insert`、`@Update`、`@Delete` 等注解 SQL，且接口声明与 XML 映射一致。
+- 简单 CRUD 已优先使用 MyBatis-Plus；确需手写的 SQL 位于 Mapper XML，Java Mapper 接口中没有注解 SQL，自定义方法与 XML 映射一致。
 - 涉及上下文 UI 图生成时，已按上下文一比一完全复刻；任何无法复刻或需要偏离的点均已先说明并获得用户确认。
 - 最终回复清楚列出完成内容、验证结果和剩余风险。

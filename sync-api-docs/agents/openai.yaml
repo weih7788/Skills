@@ -1,0 +1,4 @@
+interface:
+  display_name: "同步版本 API 文档"
+  short_description: "根据版本代码变更同步壹沓接口文档后台与企业微信在线表格字段信息"
+  default_prompt: "使用 $sync-api-docs 同步本次版本的 API 字段变更。"

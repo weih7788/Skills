@@ -29,7 +29,7 @@ description: 当用户已经通过 plan 或其他方式形成相对完整的技�
 6. **核心注释必须要有**。新增或修改代码时，核心业务逻辑、关键分支、兼容性处理、非直观约束和复杂算法必须同步补充简短意图注释，说明业务语义、关键约束和必要背景；不得留下无说明的核心逻辑，也不得堆砌复述代码的无效注释。
 7. **Java 注释必须补齐且有效**。如果新增或更新 Java 类、方法、DTO、VO、Entity、Controller 接口或核心逻辑，必须同步补充言简意赅的必要注释；类、方法、属性和 Controller 接口的说明必须使用标准多行 JavaDoc：`/**`、正文 ` * ...`、`*/` 分别独占一行，禁止 `/** 描述。 */` 等单行写法，不得以 `//`、`/* ... */` 或 Swagger 注解代替；DTO、VO 的每个字段都必须添加字段含义注释，Controller 的每个接口都必须添加接口用途注释，并按实际签名补齐 `@param`、`@return`、`@throws`；service 接口方法已有注释时，对应实现类方法也必须补充注释；不得留下无注释的新类、新方法、数据字段、Controller 接口或复杂业务分支，也不得堆砌复述代码的无效注释。
 8. **上下文 UI 图必须一比一复刻**。如果本次执行涉及根据上下文、截图、设计稿或既有页面生成 UI 图、交互图、效果图或 mockup，必须以原上下文为准进行一比一完全复刻，不得自行改配色、布局、组件形态、视觉密度、文案或交互状态；确需偏离时必须先说明原因并获得用户确认。
-9. **MyBatis Mapper 禁止注解 SQL**。新增或修改 MyBatis Mapper 时，不得使用 `@Select`、`@Insert`、`@Update`、`@Delete` 等注解直接编写 SQL，也不得在注解中嵌入 `<script>`、动态 SQL 或 SQL 片段；SQL 必须放在对应的 Mapper XML 中，Mapper 接口只保留方法签名及 `@Param`、`@Mapper` 等非 SQL 映射所需注解。
+9. **MyBatis Mapper 禁止注解 SQL**。新增或修改 MyBatis Mapper 时，不得使用 `@Select`、`@Insert`、`@Update`、`@Delete` 等注解直接编写 SQL，也不得在注解中嵌入 `<script>`、动态 SQL 或 SQL 片段；需要手写的 SQL 必须放在对应的 Mapper XML 中；简单 CRUD 优先使用 MyBatis-Plus，Mapper 的自定义 SQL 映射只保留方法签名及 `@Param`、`@Mapper` 等非 SQL 映射所需注解。
 
 ## 参考文件读取策略
 
@@ -108,7 +108,23 @@ description: 当用户已经通过 plan 或其他方式形成相对完整的技�
 7. **核心注释随改动同行**：涉及核心业务逻辑、关键分支、兼容性处理、非直观约束或复杂算法的新增或修改时，必须补充简短意图注释；注释只写业务语义、关键约束和必要背景，避免重复代码字面含义。
 8. **Java 注释随代码同行**：涉及 Java 代码新增或更新时，类、方法、属性和 Controller 接口要使用标准多行 JavaDoc；`/**`、每行以 ` *` 开头的正文或标签、`*/` 必须分别换行，不能压缩成单行；DTO、VO 的每个字段以及 Entity 的新增或更新属性要添加字段含义注释；Controller 的每个接口要添加接口用途注释，并按实际签名为全部参数、非 `void` 返回值和声明或需要说明的异常分别补齐 `@param`、`@return`、`@throws`；service 接口方法存在注释时，对应实现类方法也要添加注释；核心业务逻辑、关键分支和不直观的约束要添加意图注释。注释只写业务语义、关键约束和必要背景，避免重复代码字面含义。
 9. **UI 图按上下文逐项对齐**：涉及设计 UI 图生成时，逐项对齐上下文中的页面结构、组件、状态、间距、色彩、字号、文案和数据展示，目标是一比一完全复刻，而不是重新设计或风格化演绎。
-10. **MyBatis SQL 统一使用 XML**：生成或修改 Mapper 查询与写入逻辑时，将 SQL、动态条件和 `<script>` 内容放入对应的 Mapper XML；Java Mapper 接口不得通过 `@Select`、`@Insert`、`@Update`、`@Delete` 等注解承载 SQL。
+10. **简单 SQL 优先使用 MyBatis-Plus**：单表条件查询、排序、分页、计数和增删改，优先使用 IService 的 lambdaQuery()/lambdaUpdate() 链式 API，不为这类操作在 XML 中手写 SQL。确需手写的复杂联表查询、数据库特有的原子操作（如 upsert）等才放入 Mapper XML；仍禁止使用 `@Select`、`@Insert`、`@Update`、`@Delete` 等注解 SQL。
+
+11. **Java 类型使用简单类名**：新增或修改 Java 代码时，通过 `import` 引入类型，在字段、参数、返回值、局部变量、泛型和方法调用中使用简单类名，不直接写全限定类名。例如使用 `import java.util.Date;` 与 `private Date lastUsedAt;`，不要写 `private java.util.Date lastUsedAt;`。仅在同名类型冲突等无法通过普通导入消除歧义的必要场景使用全限定类名。
+
+12. **Java 方法显式声明访问修饰符**：新增或修改 Java 方法时，必须显式使用 `public`、`protected` 或 `private`，不省略为默认包访问权限；根据实际调用范围选择最小可见性，类内辅助方法使用 `private`，接口方法显式使用 `public`。不要为方便测试而扩大生产方法的可见性，优先通过公开业务入口验证行为。
+
+13. **MyBatis SQL 优先完整可读**：尽量少用 `<sql>` 和 `<include>` 标签。简单 WHERE 条件、短字段列表或仅少量重复的片段直接写在各条 SQL 中，让读者无需跳转即可理解完整语句；只有片段较复杂、多处复用且抽取确实改善维护性时才使用，避免多层嵌套引用。
+
+14. **Mapper 与 XML 对应，CRUD 放在 ServiceImpl**：Mapper 继承 BaseMapper，并只声明与 XML 语句一一对应的自定义方法（方法名对应语句 id）；不得在 Mapper 中编写 default 方法、Wrapper 查询或业务实现。简单 CRUD 在对应 Service 接口声明，由 ServiceImpl 使用 MyBatis-Plus 实现；通用 BaseMapper 继承方法无需 XML 映射。
+
+15. **ServiceImpl 使用 IService 的 Lambda 链式方法**：简单条件查询统一写为 `lambdaQuery().eq(...).list()/one()/count()`，更新或删除写为 `lambdaUpdate().eq(...).set(...).update()`、`lambdaUpdate().eq(...).remove()`。不要手动构造 `Wrappers.lambdaQuery()`、`LambdaQueryWrapper` 或 `LambdaUpdateWrapper` 再传给 `list/remove/update`，也不要直接调用 `baseMapper`、`getBaseMapper()` 或 Mapper 的通用 CRUD。无条件的简单保存可直接使用 `save` 等 IService 方法；自定义 XML 对应的联表查询、原子 upsert 等仍通过注入的 Mapper 调用。注意链式 `remove()` 返回 boolean，方法签名需要 int 时显式转换为 1/0。
+
+16. **Spring 依赖优先使用字段注入**：新增或修改 Spring Bean 的依赖时，优先使用 `@Autowired` 字段注入，通过 `import org.springframework.beans.factory.annotation.Autowired;` 引入注解；注入字段不声明为 `final`。不为单纯注入依赖额外编写构造方法或添加 `@RequiredArgsConstructor`。普通对象的业务构造方法不受此规则影响；测试同步调整依赖初始化。
+
+17. **Mapper XML SQL 格式化并添加用途注释**：每条自定义 SQL 前添加简短 XML 注释，说明业务用途及必要的隔离、兜底或更新语义。SQL 关键字统一大写，`SELECT`、`FROM`、`JOIN`、`WHERE`、`ORDER BY`、`LIMIT` 等子句分行；`ON`、`AND` 条件分别换行并保持缩进一致。较长的 INSERT 字段列表和 VALUES 参数列表逐项换行、顺序对应；`ON DUPLICATE KEY UPDATE` 的赋值逐项换行。不同语句之间留空行，避免把多个子句或条件挤在一行。纯排版或注释修改应验证 XML 可解析且 SQL 语义未改变。
+
+18. **并发控制遵循已确认需求**：保持实现简单，不因推测的并发场景自行增加 Redis 锁、`FOR UPDATE`、事务完成后解锁或首次成功标记。确需并发控制时，应结合明确的业务一致性要求说明理由。用户明确要求去掉锁时，同步移除相关调用、辅助方法、依赖、注释和测试断言；普通事务是否保留按业务原子性要求决定，并说明实际的一致性边界。本次功能的去锁决定不应扩展为所有业务一律禁用锁。
 
 ## 执行流程
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release Checklist"
+  short_description: "Check backend requirement coverage and release readiness"
+  default_prompt: "Use $release-checklist to check missing backend requirements for a Yunxiao iteration against the specified backend branch and generate the release checklist."

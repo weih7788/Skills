@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only SLS MCP query with bounded, redacted terminal output."""
+"""Read-only SLS MCP query; redact log messages only when requested."""
 
 import argparse
 import json
@@ -38,6 +38,16 @@ def sanitize(value, secrets):
         if secret:
             value = value.replace(secret, "[REDACTED]")
     value = re.sub(r'(?i)https?://[^\s"\\]+', '[URL]', value)
+    value = re.sub(
+        r'(?i)(["\x27](?:password|passwd|pwd|client_secret|access_key_secret)["\x27]\s*:\s*["\x27])([^"\x27]*)(["\x27])',
+        r'\1[REDACTED]\3',
+        value,
+    )
+    value = re.sub(
+        r'(?i)\b((?:password|passwd|pwd|client_secret|access_key_secret)\s*=\s*)[^\s,;]+',
+        r'\1[REDACTED]',
+        value,
+    )
     value = re.sub(r'(?i)(access_token|token|signature|authorization)([=:\\" ]+)[^,;\s"\\}]+', r'\1\2[REDACTED]', value)
     value = re.sub(r'\b1[3-9]\d{9}\b', '[PHONE]', value)
     value = re.sub(r'[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}', '[EMAIL]', value, flags=re.I)
@@ -70,6 +80,11 @@ def main():
     parser.add_argument("--reverse", action="store_true")
     parser.add_argument("--histogram", action="store_true")
     parser.add_argument("--include-message", action="store_true")
+    parser.add_argument("--redact", action="store_true", help="Redact sensitive values in returned log messages")
+    parser.add_argument("--full-message", action="store_true", help="Print the complete message of one identified log")
+    parser.add_argument("--message-time", help="Exact log_time of the identified log")
+    parser.add_argument("--message-class", help="Exact class of the identified log")
+    parser.add_argument("--message-trace-id", help="Exact trace_id of the identified log")
     parser.add_argument("--credential-file", help="Private file path; credentials are never printed")
     parser.add_argument("--timeout", type=int, default=30)
     args = parser.parse_args()
@@ -77,6 +92,11 @@ def main():
         parser.error("--lines must be between 1 and 20")
     if args.query.strip() == "*":
         parser.error("Use a narrower query than *")
+    selectors = (args.message_time, args.message_class, args.message_trace_id)
+    if args.full_message and (args.histogram or not all(selectors)):
+        parser.error("--full-message requires --message-time, --message-class, and --message-trace-id without --histogram")
+    if any(selectors) and not args.full_message:
+        parser.error("Message selectors require --full-message")
 
     env = os.environ.copy()
     credential_file = args.credential_file
@@ -123,9 +143,22 @@ def main():
                 print(json.dumps(data.get("histograms", data.get("histogram", [])), ensure_ascii=False))
                 continue
             for row in data.get("logs", []):
+                if args.full_message and (
+                    row.get("log_time") != args.message_time
+                    or row.get("class") != args.message_class
+                    or row.get("trace_id") != args.message_trace_id
+                ):
+                    continue
                 item = {key: row.get(key) for key in ("log_time", "__time__", "app", "class", "level", "trace_id") if row.get(key) is not None}
-                if args.include_message:
-                    item["message"] = sanitize(row.get("message", ""), secrets)[:2000]
+                if args.include_message or args.full_message:
+                    message = row.get("message", "")
+                    for secret in secrets:
+                        if secret:
+                            message = message.replace(secret, "[REDACTED CONNECTION CREDENTIAL]")
+                    if args.redact:
+                        message = sanitize(message, secrets)
+                    item["message"] = message if args.full_message else message[:2000]
+                    item["message_truncated"] = not args.full_message and len(message) > 2000
                 print(json.dumps(item, ensure_ascii=False))
     finally:
         process.terminate()
