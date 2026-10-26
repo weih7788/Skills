@@ -73,6 +73,7 @@ def rpc(process, request_id, method, params, timeout):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env", choices=PROJECT, required=True)
+    parser.add_argument("--logstore", choices=("cube-robot-with-user", "middle-platform-log"), default=LOGSTORE)
     parser.add_argument("--from", dest="from_time", required=True)
     parser.add_argument("--to", dest="to_time", required=True)
     parser.add_argument("--query", required=True, help="Narrow SLS search expression; never use * over a large range")
@@ -123,7 +124,7 @@ def main():
         rpc(process, 1, "initialize", {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "sls-skill", "version": "1.0"}}, args.timeout)
         process.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
         process.stdin.flush()
-        arguments = {"project": PROJECT[args.env], "logstore": LOGSTORE, "from": args.from_time, "to": args.to_time, "query": args.query}
+        arguments = {"project": PROJECT[args.env], "logstore": args.logstore, "from": args.from_time, "to": args.to_time, "query": args.query}
         if args.histogram:
             tool = "sls_get_log_histogram"
         else:
@@ -133,7 +134,7 @@ def main():
         if response.get("isError"):
             details = " ".join(part.get("text", "") for part in response.get("content", []) if part.get("type") == "text")
             raise RuntimeError(sanitize(details[:500], secrets))
-        print(json.dumps({"checked_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds"), "environment": args.env, "project": PROJECT[args.env], "logstore": LOGSTORE, "from": args.from_time, "to": args.to_time, "query": args.query}, ensure_ascii=False))
+        print(json.dumps({"checked_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds"), "environment": args.env, "project": PROJECT[args.env], "logstore": args.logstore, "from": args.from_time, "to": args.to_time, "query": args.query}, ensure_ascii=False))
         for part in response.get("content", []):
             if part.get("type") != "text":
                 continue

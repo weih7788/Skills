@@ -21,3 +21,5 @@ SLS/.venv/bin/python SLS/scripts/query.py --env prod --from 1791871290 --to 1791
 ```
 
 `--full-message` 只在同时指定以上三个单条定位条件时可用，不会输出其他匹配日志的消息。默认不脱敏日志内容；使用 `--redact` 时会对常见密码、token、邮箱、手机号和 URL 脱敏，仍须检查是否有其他敏感字段。不要直接在终端打印完整 MCP 原始响应；本机 SLS 访问密钥不得输出。若用户要原始 JSON，从完整 `message` 中解析对应的请求或响应对象，保持字段和值，并明确说明它取自哪条日志。
+
+查询生产 common-tools 时增加 `--logstore middle-platform-log`；默认日志库仍为 `cube-robot-with-user`。
